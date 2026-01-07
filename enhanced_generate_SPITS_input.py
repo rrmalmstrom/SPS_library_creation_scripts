@@ -324,7 +324,7 @@ def addSPITScolumns(df):
     
     df['Sample_vol'] = 25
     
-    df['Sample_container'] = 'plate'
+    df['Sample_container'] = '384'
     
     df['Sample_format'] = 'MDA reaction buffer'
     
