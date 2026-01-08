@@ -1,37 +1,51 @@
 #!/usr/bin/env python3
 
-# USAGE: python SPS_make_illumina_index_and_FA_files_NEW.py <grid_table.csv>
+# USAGE: python SPS_make_illumina_index_and_FA_files_NEW.py
 
 """
 SPS Library Creation Script - Revised Version
 
-This script reads an existing project_summary.db database and merges it with 
-grid table data to generate all necessary files for library preparation:
+This script automatically detects a grid table CSV file in the current working
+directory and merges it with an existing project_summary.db database to generate
+all necessary files for library preparation:
 - Echo transfer files
-- Illumina index transfer files  
+- Illumina index transfer files
 - Fragment Analyzer (FA) input files
 - Dilution transfer files
 - Bartender barcode label files
 
 The script archives existing database files before creating updated versions.
+
+Grid Table Requirements:
+The grid table CSV file must contain these required columns:
+- Well
+- Aliquot Plate Label
+- Illumina Library
+- Container Barcode
+- Nucleic Acid ID
 """
 
 import pandas as pd
 import numpy as np
 import sys
-import string
 from datetime import datetime
 from pathlib import Path
-import os
 from sqlalchemy import create_engine
 
 
-# Global well list for 96-well plates
+# Global well lists for plate formats
 WELL_LIST_96W = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2', 'A3', 'B3', 'C3',
                  'D3', 'E3', 'F3', 'G3', 'H3', 'A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'A5', 'B5', 'C5', 'D5', 'E5', 'F5', 'G5',
                  'H5', 'A6', 'B6', 'C6', 'D6', 'E6', 'F6', 'G6', 'H6', 'A7', 'B7', 'C7', 'D7', 'E7', 'F7', 'G7', 'H7', 'A8', 'B8', 'C8',
                  'D8', 'E8', 'F8', 'G8', 'H8', 'A9', 'B9', 'C9', 'D9', 'E9', 'F9', 'G9', 'H9', 'A10', 'B10', 'C10', 'D10', 'E10', 'F10', 'G10',
                  'H10', 'A11', 'B11', 'C11', 'D11', 'E11', 'F11', 'G11', 'H11', 'A12', 'B12', 'C12', 'D12', 'E12', 'F12', 'G12', 'H12']
+
+WELL_LIST_384W = ['A1', 'C1', 'E1', 'G1', 'I1', 'K1', 'M1', 'O1', 'A3', 'C3', 'E3', 'G3', 'I3', 'K3', 'M3', 'O3', 'A5', 'C5', 'E5', 'G5',
+                  'I5', 'K5', 'M5', 'O5', 'A7', 'C7', 'E7', 'G7', 'I7', 'K7', 'M7', 'O7', 'A9', 'C9', 'E9', 'G9', 'I9', 'K9', 'M9', 'O9',
+                  'A11', 'C11', 'E11', 'G11', 'I11', 'K11', 'M11', 'O11', 'A13', 'C13', 'E13', 'G13', 'I13', 'K13', 'M13', 'O13', 'A15',
+                  'C15', 'E15', 'G15', 'I15', 'K15', 'M15', 'O15', 'A17', 'C17', 'E17', 'G17', 'I17', 'K17', 'M17', 'O17', 'A19', 'C19',
+                  'E19', 'G19', 'I19', 'K19', 'M19', 'O19', 'A21', 'C21', 'E21', 'G21', 'I21', 'K21', 'M21', 'O21', 'A23', 'C23', 'E23',
+                  'G23', 'I23', 'K23', 'M23', 'O23']
 
 
 def create_directories():
@@ -94,18 +108,9 @@ def create_directories():
 
 def get_plate_type():
     """Get plate configuration and well mappings (adapted from original)."""
-    well_list_96w = WELL_LIST_96W
-    
-    well_list_384w = ['A1', 'C1', 'E1', 'G1', 'I1', 'K1', 'M1', 'O1', 'A3', 'C3', 'E3', 'G3', 'I3', 'K3', 'M3', 'O3', 'A5', 'C5', 'E5', 'G5',
-                      'I5', 'K5', 'M5', 'O5', 'A7', 'C7', 'E7', 'G7', 'I7', 'K7', 'M7', 'O7', 'A9', 'C9', 'E9', 'G9', 'I9', 'K9', 'M9', 'O9',
-                      'A11', 'C11', 'E11', 'G11', 'I11', 'K11', 'M11', 'O11', 'A13', 'C13', 'E13', 'G13', 'I13', 'K13', 'M13', 'O13', 'A15',
-                      'C15', 'E15', 'G15', 'I15', 'K15', 'M15', 'O15', 'A17', 'C17', 'E17', 'G17', 'I17', 'K17', 'M17', 'O17', 'A19', 'C19',
-                      'E19', 'G19', 'I19', 'K19', 'M19', 'O19', 'A21', 'C21', 'E21', 'G21', 'I21', 'K21', 'M21', 'O21', 'A23', 'C23', 'E23',
-                      'G23', 'I23', 'K23', 'M23', 'O23']
-    
     # Create conversion dictionaries
-    convert_96_to_384_plate = dict(zip(well_list_96w, well_list_384w))
-    convert_384_to_96_plate = dict(zip(well_list_384w, well_list_96w))
+    convert_96_to_384_plate = dict(zip(WELL_LIST_96W, WELL_LIST_384W))
+    convert_384_to_96_plate = dict(zip(WELL_LIST_384W, WELL_LIST_96W))
     
     # Use 95-well format (standard for CE and SPS)
     well_list_95w_1_empty = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2', 'A3', 'B3', 'C3',
@@ -245,14 +250,14 @@ def archive_existing_files(base_dir, archive_dir):
     if db_file.exists():
         archive_db = archive_dir / f"archive_project_summary_{timestamp}.db"
         db_file.rename(archive_db)
-        print(f"Archived database to: {archive_db}")
+        # print(f"Archived database to: {archive_db}")
     
     # Archive CSV file
     csv_file = base_dir / "project_summary.csv"
     if csv_file.exists():
         archive_csv = archive_dir / f"archive_project_summary_{timestamp}.csv"
         csv_file.rename(archive_csv)
-        print(f"Archived CSV to: {archive_csv}")
+        # print(f"Archived CSV to: {archive_csv}")
 
 
 def update_database(merged_df, base_dir):
@@ -286,32 +291,28 @@ def update_database(merged_df, base_dir):
     csv_path = base_dir / 'project_summary.csv'
     merged_df_ordered.to_csv(csv_path, index=False)
     
-    print(f"Created new database and CSV with {len(merged_df_ordered)} rows")
+    # print(f"Created new database and CSV with {len(merged_df_ordered)} rows")
 
 
 def prepare_echo_data(merged_df):
     """Prepare data for Echo transfer files."""
     echo_df = merged_df.copy()
     
-    # Convert well positions to numeric row/column
+    # Convert well positions to numeric row/column with final column names
     # Use 'source_well' column from database for source positions (where samples come from)
-    echo_df['Source_Row'], echo_df['Source_Column'] = zip(*echo_df['source_well'].apply(convert_well_to_row_col))
+    echo_df['Source Row'], echo_df['Source Column'] = zip(*echo_df['source_well'].apply(convert_well_to_row_col))
     # Use 'Destination_Well' for destination positions (where samples go to)
-    echo_df['Dest_Row'], echo_df['Dest_Column'] = zip(*echo_df['Destination_Well'].apply(convert_well_to_row_col))
+    echo_df['Destination Row'], echo_df['Destination Column'] = zip(*echo_df['Destination_Well'].apply(convert_well_to_row_col))
     
     # Create Echo file format
     echo_df = echo_df.rename(columns={
         'plate_id': 'Source Plate Name',
         'echo_id': 'Source Plate Barcode',
-        'Destination_plate_name': 'Destination Plate Name'
+        'Destination_plate_name': 'Destination Plate Name',
+        'Destination_Plate_Barcode': 'Destination Plate Barcode'
     })
     
-    echo_df['Source Row'] = echo_df['Source_Row']
-    echo_df['Source Column'] = echo_df['Source_Column']
-    echo_df['Destination Row'] = echo_df['Dest_Row']
-    echo_df['Destination Column'] = echo_df['Dest_Column']
     echo_df['Transfer Volume'] = 500
-    echo_df['Destination Plate Barcode'] = echo_df['Destination_Plate_Barcode']
     
     # Select final columns
     echo_final = echo_df[['Source Plate Name', 'Source Plate Barcode', 'Source Row', 'Source Column',
@@ -330,9 +331,19 @@ def make_echo_files(echo_df, directories):
     for dest_plate in dest_plates:
         plate_data = echo_df[echo_df['Destination Plate Barcode'] == dest_plate].copy()
         
-        # Get unique source plates for this destination
+        # Get unique source plates for this destination and sort them numerically
         source_plates = plate_data['Source Plate Barcode'].unique()
-        source_names = '_'.join(source_plates)
+        # Sort numerically by extracting the number from plate names like "Prtist.13"
+        def extract_plate_number(plate_name):
+            try:
+                # Extract number after the last dot
+                return int(plate_name.split('.')[-1])
+            except (ValueError, IndexError):
+                # If no number found, return the original string for alphabetical sort
+                return plate_name
+        
+        source_plates_sorted = sorted(source_plates, key=extract_plate_number)
+        source_names = '_'.join(source_plates_sorted)
         
         # Create filename: destination_source1_source2_etc.csv
         filename = f"{dest_plate}_{source_names}.csv"
@@ -342,7 +353,7 @@ def make_echo_files(echo_df, directories):
         
         # Save file
         plate_data.to_csv(ECHO_DIR / filename, index=False)
-        print(f"Created Echo file: {filename}")
+        # print(f"Created Echo file: {filename}")
 
 
 def create_illum_dataframe(merged_df, convert_384_to_96):
@@ -383,7 +394,7 @@ def make_illumina_files(illum_df, directories):
         # Save file
         filename = f"Illumina_index_transfer_{dest_plate}.csv"
         plate_data.to_csv(INDEX_DIR / filename, index=False)
-        print(f"Created Illumina file: {filename}")
+        # print(f"Created Illumina file: {filename}")
 
 
 def create_fa_dataframe(merged_df, convert_384_to_96):
@@ -446,7 +457,7 @@ def make_fa_files(FA_df, directories):
         # Save file
         filename = f"FA_upload_{dest_plate}.csv"
         tmp_fa_df.to_csv(FA_DIR / filename, index=True, header=False)
-        print(f"Created FA file: {filename}")
+        # print(f"Created FA file: {filename}")
 
 
 def make_dilution_dataframe(merged_df):
@@ -457,13 +468,7 @@ def make_dilution_dataframe(merged_df):
     dilution_df = merged_df[['Destination_Plate_Barcode', 'Destination_Well']].copy()
     
     # Convert 384-well to 96-well positions for FA
-    well_list_384w = ['A1', 'C1', 'E1', 'G1', 'I1', 'K1', 'M1', 'O1', 'A3', 'C3', 'E3', 'G3', 'I3', 'K3', 'M3', 'O3', 'A5', 'C5', 'E5', 'G5',
-                      'I5', 'K5', 'M5', 'O5', 'A7', 'C7', 'E7', 'G7', 'I7', 'K7', 'M7', 'O7', 'A9', 'C9', 'E9', 'G9', 'I9', 'K9', 'M9', 'O9',
-                      'A11', 'C11', 'E11', 'G11', 'I11', 'K11', 'M11', 'O11', 'A13', 'C13', 'E13', 'G13', 'I13', 'K13', 'M13', 'O13', 'A15',
-                      'C15', 'E15', 'G15', 'I15', 'K15', 'M15', 'O15', 'A17', 'C17', 'E17', 'G17', 'I17', 'K17', 'M17', 'O17', 'A19', 'C19',
-                      'E19', 'G19', 'I19', 'K19', 'M19', 'O19', 'A21', 'C21', 'E21', 'G21', 'I21', 'K21', 'M21', 'O21', 'A23', 'C23', 'E23',
-                      'G23', 'I23', 'K23', 'M23', 'O23']
-    convert_384_to_96 = dict(zip(well_list_384w, WELL_LIST_96W))
+    convert_384_to_96 = dict(zip(WELL_LIST_384W, WELL_LIST_96W))
     
     dilution_df['FA_Well'] = dilution_df['Destination_Well'].replace(convert_384_to_96)
     dilution_df['dilution_factor'] = dilution_factor
@@ -508,7 +513,7 @@ def make_dilution_files(dilution_df, directories):
         # Save file
         filename = f"FA_plate_transfer_{dest_plate}.csv"
         plate_data.to_csv(FTRAN_DIR / filename, index=False)
-        print(f"Created dilution file: {filename}")
+        # print(f"Created dilution file: {filename}")
 
 
 def make_threshold_file(merged_df, directories):
@@ -528,7 +533,7 @@ def make_threshold_file(merged_df, directories):
     
     # Save file
     thresh_df.to_csv(ANALYZE_DIR / 'thresholds.txt', index=False, sep='\t')
-    print("Created threshold file: thresholds.txt")
+    # print("Created threshold file: thresholds.txt")
 
 
 def make_bartender_labels(merged_df, directories):
@@ -565,22 +570,108 @@ def make_bartender_labels(merged_df, directories):
     
     # Move to library directory
     Path(filename).rename(LIB_DIR / filename)
-    print(f"Created Bartender file: {filename}")
+    # print(f"Created Bartender file: {filename}")
+
+
+def find_csv_files(base_dir):
+    """Find all CSV files in the base directory."""
+    csv_files = []
+    try:
+        for file_path in base_dir.glob("*.csv"):
+            if file_path.is_file():
+                csv_files.append(file_path)
+    except Exception as e:
+        print(f"Error scanning directory for CSV files: {e}")
+    
+    return csv_files
+
+
+def validate_grid_table_columns(csv_file):
+    """Check if CSV file has required grid table columns without full validation."""
+    required_cols = ['Well', 'Aliquot Plate Label', 'Illumina Library', 'Container Barcode', 'Nucleic Acid ID']
+    
+    try:
+        # Read only the header row to check columns
+        df_header = pd.read_csv(csv_file, nrows=0)
+        missing_cols = [col for col in required_cols if col not in df_header.columns]
+        
+        if not missing_cols:
+            return True, None
+        else:
+            return False, f"Missing columns: {missing_cols}"
+            
+    except Exception as e:
+        return False, f"Error reading file: {e}"
+
+
+def auto_detect_grid_table(base_dir):
+    """Automatically detect grid table file in working directory."""
+    print("Scanning current directory for grid table CSV file...")
+    
+    # Find all CSV files
+    csv_files = find_csv_files(base_dir)
+    
+    if not csv_files:
+        print("\nERROR: No CSV files found in current directory.")
+        print("\nA grid table CSV file must contain these required columns:")
+        print("- Well")
+        print("- Aliquot Plate Label")
+        print("- Illumina Library")
+        print("- Container Barcode")
+        print("- Nucleic Acid ID")
+        print("\nPlease ensure your grid table file is in the current directory.")
+        sys.exit()
+    
+    # Validate each CSV file
+    valid_files = []
+    invalid_files = []
+    
+    for csv_file in csv_files:
+        is_valid, error_msg = validate_grid_table_columns(csv_file)
+        if is_valid:
+            valid_files.append(csv_file)
+        else:
+            invalid_files.append((csv_file, error_msg))
+    
+    # Handle results
+    if len(valid_files) == 0:
+        print(f"\nERROR: No valid grid table found in current directory.")
+        print(f"\nFound {len(csv_files)} CSV file(s), but none contain the required columns:")
+        for csv_file, error_msg in invalid_files:
+            print(f"- {csv_file.name}: {error_msg}")
+        print("\nA grid table CSV file must contain these required columns:")
+        print("- Well")
+        print("- Aliquot Plate Label")
+        print("- Illumina Library")
+        print("- Container Barcode")
+        print("- Nucleic Acid ID")
+        print("\nPlease ensure your grid table file contains all required columns.")
+        sys.exit()
+        
+    elif len(valid_files) > 1:
+        print(f"\nERROR: Multiple valid grid table files found in current directory.")
+        print(f"\nValid grid table files detected:")
+        for valid_file in valid_files:
+            print(f"- {valid_file.name}")
+        print(f"\nPlease remove extra grid table files, leaving only one in the current directory.")
+        sys.exit()
+    
+    # Exactly one valid file found
+    grid_table_file = valid_files[0]
+    print(f"Found valid grid table: {grid_table_file.name}")
+    return str(grid_table_file)
 
 
 def main():
     """Main execution function."""
-    if len(sys.argv) != 2:
-        print("Usage: python SPS_make_illumina_index_and_FA_files_NEW.py <grid_table.csv>")
-        sys.exit()
-    
-    grid_table_file = sys.argv[1]
-    
     try:
         # Create directory structure
         print("Creating directory structure...")
         directories = create_directories()
         BASE_DIR, PROJECT_DIR, LIB_DIR, ECHO_DIR, FA_DIR, INDEX_DIR, ANALYZE_DIR, FTRAN_DIR, ARCHIVE_DIR = directories
+        
+        # Auto-detect grid table file
+        grid_table_file = auto_detect_grid_table(BASE_DIR)
         
         # Get plate configuration
         well_list, convert_96_to_384, convert_384_to_96 = get_plate_type()
@@ -636,14 +727,13 @@ def main():
         grid_path = Path(grid_table_file)
         if grid_path.exists():
             grid_path.rename(LIB_DIR / grid_table_file)
-            print(f"Moved {grid_table_file} to library directory")
+            # print(f"Moved {grid_table_file} to library directory")
         
         print("\n" + "="*50)
         print("SCRIPT COMPLETED SUCCESSFULLY!")
         print("="*50)
         print(f"Processed {len(merged_df)} samples")
-        print(f"Generated files in: {PROJECT_DIR}")
-        print("All output files have been created and are ready for use.")
+        print("\nAll output files have been created and are ready for use.")
         
     except Exception as e:
         print(f"Error: {e}")
