@@ -334,10 +334,6 @@ def main():
     # create sqlite database file
     createSQLdb(final_df)
 
-    # Create success marker file to indicate script completed successfully
-    os.makedirs('.workflow_status', exist_ok=True)
-    with open('.workflow_status/SPS_conclude_FA_analysis_generate_ESP_smear_file', 'w') as f:
-        f.write('Script completed successfully')
 
 
 if __name__ == "__main__":
