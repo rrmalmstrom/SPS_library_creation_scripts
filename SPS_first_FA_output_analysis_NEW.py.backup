@@ -22,24 +22,6 @@ import shutil
 from sqlalchemy import create_engine
 import pandas as pd
 import numpy as np
-from datetime import datetime
-
-
-def create_success_marker():
-    """Create success marker file for workflow manager integration."""
-    script_name = Path(__file__).stem
-    status_dir = Path(".workflow_status")
-    status_dir.mkdir(exist_ok=True)
-    success_file = status_dir / f"{script_name}.success"
-    
-    try:
-        with open(success_file, "w") as f:
-            f.write(f"SUCCESS: {script_name} completed at {datetime.now()}\n")
-        print(f"✅ Success marker created: {success_file}")
-    except Exception as e:
-        print(f"❌ ERROR: Could not create success marker: {e}")
-        print("Script failed - workflow manager integration requires success marker")
-        sys.exit()
 
 
 # Define paths using pathlib strategy
@@ -417,9 +399,6 @@ def main():
     reduced_fa_df.to_csv(output_file, sep='\t', index=False)
     
     print(f"\nAnalysis complete. Results saved to: \n{output_file}")
-    
-    # Create success marker for workflow manager integration
-    create_success_marker()
 
 
 if __name__ == "__main__":
