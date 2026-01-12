@@ -325,7 +325,7 @@ def main():
 
     POOL_DIR = PROJECT_DIR / "2_pooling"
 
-    SMEAR_DIR = POOL_DIR / "A_make_clarity_aliquot_upload_file"
+    SMEAR_DIR = POOL_DIR / "A_smear_file_for_ESP_upload"
 
 
     # get current date and time, will add to archive database file name
