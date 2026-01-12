@@ -11,6 +11,7 @@ Version: 1.0 (Initial implementation for workflow manager integration)
 """
 
 import datetime
+import json
 import sys
 from pathlib import Path
 
@@ -32,6 +33,34 @@ def create_success_marker():
         sys.exit()
 
 
+def update_workflow_state(choice):
+    """Update workflow_state.json based on user choice."""
+    state_file = Path("workflow_state.json")
+    
+    # Load current state
+    if state_file.exists():
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+    else:
+        state = {}
+    
+    if choice == "yes":
+        # Enable rework steps
+        state["rework_first_attempt"] = "pending"
+        state["second_fa_analysis"] = "pending"
+        # conclude_fa_analysis remains pending (will be set after step 5)
+        
+    else:  # choice == "no"
+        # Skip rework steps, go directly to conclusion
+        state["rework_first_attempt"] = "skipped"
+        state["second_fa_analysis"] = "skipped"
+        state["conclude_fa_analysis"] = "pending"
+    
+    # Save updated state
+    with open(state_file, 'w') as f:
+        json.dump(state, f, indent=2)
+
+
 def main():
     """Main decision logic for second attempt determination."""
     print("\n" + "="*60)
@@ -43,19 +72,25 @@ def main():
     print("  YES - Perform second rework attempt")
     print("  NO  - Proceed to final analysis and ESP file generation")
     
+    choice = None
     while True:
-        choice = input("\nEnter your choice (YES/NO): ").strip().upper()
+        user_input = input("\nEnter your choice (YES/NO): ").strip().upper()
         
-        if choice in ['YES', 'Y']:
+        if user_input in ['YES', 'Y']:
             print("\n✅ Decision recorded: Second rework attempt will be performed")
             print("   → The workflow will loop back for additional rework")
+            choice = "yes"
             break
-        elif choice in ['NO', 'N']:
+        elif user_input in ['NO', 'N']:
             print("\n✅ Decision recorded: Proceeding to final analysis")
             print("   → The workflow will continue to ESP file generation")
+            choice = "no"
             break
         else:
             print("❌ Invalid choice. Please enter YES or NO.")
+    
+    # Update workflow state based on choice
+    update_workflow_state(choice)
     
     # Create success marker for workflow manager
     create_success_marker()
