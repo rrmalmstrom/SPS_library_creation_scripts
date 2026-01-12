@@ -1,19 +1,24 @@
-# SPS Library Creation Script - NEW Version
+# SPS Library Creation Script - Enhanced Multi-Grid Table Version
 
 ## Overview
 
-This script is a completely rewritten version of the original `SPS_make_illumina_index_and_FA_files.py` that processes existing project databases and grid table data to generate all necessary files for Illumina sequencing library preparation and Fragment Analyzer quality control.
+This script is a completely rewritten and enhanced version of the original `SPS_make_illumina_index_and_FA_files.py` that processes existing project databases and **multiple grid table files** to generate all necessary files for Illumina sequencing library preparation and Fragment Analyzer quality control.
 
 ## Key Changes from Original Version
 
 ### Fundamental Workflow Change
 - **Original**: Processed Echo transfer files and data warehouse exports to create a new database
-- **NEW**: Reads existing `project_summary.db` database and merges with grid table CSV data
+- **NEW**: Reads existing `project_summary.db` database and merges with **multiple grid table CSV files**
 
-### New Features
+### Enhanced Multi-Grid Table Features
+- **Multi-file processing**: Automatically detects and processes ALL valid grid table files in directory
+- **Comprehensive duplicate detection**: Validates samples across all files with multiple criteria
+- **Missing sample identification**: Ensures all database samples are present in grid tables
+- **Enhanced safety validation**: Prevents laboratory automation errors with detailed reporting
+- **Backward compatibility**: Single-file workflows still fully supported
 - **Database archiving**: Automatically archives existing database/CSV files with timestamps
 - **Perfect merge validation**: Ensures 1:1 correspondence between database and grid table data
-- **Enhanced error handling**: All errors are fatal and cause program termination
+- **Enhanced error handling**: All errors are fatal with detailed location information
 - **Improved file organization**: Better sorting and column ordering
 
 ## Requirements
@@ -25,26 +30,53 @@ pip install pandas numpy sqlalchemy pathlib
 
 ### Input Files Required
 1. **Existing project_summary.db**: SQLite database from previous workflow
-2. **Grid table CSV file**: Contains well mapping and sample information
+2. **Grid table CSV file(s)**: One or more files containing well mapping and sample information
 
 ### Grid Table CSV Format
-The grid table CSV must contain these exact column headers:
+Each grid table CSV file must contain these exact column headers:
 - `Well`: Well position (e.g., A1, B2, C3)
-- `Aliquot Plate Label`: Plate name/identifier
+- `Library Plate Label`: Destination plate name/identifier *(updated header)*
 - `Illumina Library`: Library identifier
-- `Container Barcode`: Destination plate barcode
-- `Nucleic Acid ID`: Sample identifier
+- `Library Plate Container Barcode`: Destination plate barcode *(updated header)*
+- `Nucleic Acid ID`: Sample identifier *(REQUIRED - cannot be empty)*
+
+**Important**: The column headers have been updated to match current laboratory format. The script will reject files with the old headers (`Aliquot Plate Label`, `Container Barcode`).
 
 ## Usage
 
-### Basic Command
+### Multi-Grid Table Processing (Recommended)
 ```bash
-python SPS_make_illumina_index_and_FA_files_NEW.py <grid_table.csv>
+# Automatically processes ALL valid grid table files in current directory
+python SPS_make_illumina_index_and_FA_files_NEW.py
 ```
 
-### Example
+### Single Grid Table Processing (Backward Compatible)
 ```bash
-python SPS_make_illumina_index_and_FA_files_NEW.py my_grid_table.csv
+# Still supported for single-file workflows
+python SPS_make_illumina_index_and_FA_files_NEW.py
+```
+
+### Example Multi-File Scenario
+```bash
+# Directory contains:
+# - grid_table_OSJKAI.1.csv
+# - grid_table_OSJKAI.2.csv
+# - grid_table_OSJKAI.3.csv
+# - project_summary.db
+
+python SPS_make_illumina_index_and_FA_files_NEW.py
+
+# Output:
+# Scanning current directory for grid table CSV files...
+# Found 3 valid grid table file(s):
+# - grid_table_OSJKAI.1.csv
+# - grid_table_OSJKAI.2.csv
+# - grid_table_OSJKAI.3.csv
+# Successfully read 32 rows from grid_table_OSJKAI.1.csv
+# Successfully read 28 rows from grid_table_OSJKAI.2.csv
+# Successfully read 35 rows from grid_table_OSJKAI.3.csv
+# ✅ No duplicate samples detected across grid tables
+# Successfully combined 3 grid table file(s) with 95 total samples
 ```
 
 ### Interactive Input
@@ -127,7 +159,24 @@ archived_files/
 - **project_summary.csv**: Updated CSV file with merged data
 - **Column Order**: sample_id, internal_name, plate_id, echo_id, well, type, Destination_plate_name, Destination_Plate_Barcode, Destination_Well, Illumina_index_set, Illumina_index, Illumina Library
 
-## Data Validation
+## Enhanced Safety Features and Validation
+
+### Multi-Grid Table Validation
+The script performs comprehensive validation across all grid table files:
+
+#### Duplicate Sample Detection (FATAL)
+- **Well + Library Plate Label combinations**: Ensures no duplicate well positions across files
+- **Nucleic Acid ID duplicates**: Validates unique sample identifiers across all files
+- **Container Barcode + Well combinations**: Prevents barcode conflicts
+
+#### Missing Sample Validation (FATAL)
+- **Database completeness check**: Ensures ALL database samples are present in grid tables
+- **Detailed missing sample reporting**: Shows exact location of missing samples with source information
+
+#### Data Integrity Validation (FATAL)
+- **Empty Nucleic Acid ID detection**: Prevents processing of samples without valid identifiers
+- **Required column validation**: Ensures all grid tables have proper column headers
+- **File accessibility checks**: Validates all files exist and are readable
 
 ### Merge Validation
 The script performs strict validation to ensure perfect 1:1 correspondence between:
@@ -142,6 +191,16 @@ All errors are **fatal** and will cause the script to terminate with descriptive
 - Data mismatches
 - Invalid well positions
 - Missing required columns
+- Duplicate samples across files
+- Missing database samples in grid tables
+- Empty or invalid sample identifiers
+
+### Laboratory Safety Features
+- **Prevents cross-contamination**: Duplicate detection ensures sample uniqueness
+- **Ensures complete processing**: Missing sample detection prevents partial workflows
+- **Validates data integrity**: Comprehensive checks before automation begins
+- **Detailed error reporting**: Clear guidance for laboratory technicians
+- **Traceability protection**: Maintains sample tracking throughout process
 
 ## Workflow Integration
 
@@ -160,13 +219,64 @@ After running this script, you can proceed with:
 
 ### Common Issues
 
+#### "No valid grid table found in current directory"
+- Ensure at least one CSV file with correct column headers exists
+- Verify column headers match exactly: `Well`, `Library Plate Label`, `Illumina Library`, `Library Plate Container Barcode`, `Nucleic Acid ID`
+- Check for typos in column names (headers are case-sensitive)
+
 #### "Database file not found"
 - Ensure `project_summary.db` exists in the current directory
 - Check file permissions
 
 #### "Missing required columns in grid table"
-- Verify grid table CSV has exact column headers: Well, Aliquot Plate Label, Illumina Library, Container Barcode, Nucleic Acid ID
-- Check for typos in column names
+- **Old headers no longer supported**: Update `Aliquot Plate Label` → `Library Plate Label` and `Container Barcode` → `Library Plate Container Barcode`
+- Verify all required columns are present and spelled correctly
+
+#### "FATAL ERROR: Duplicate samples detected across grid tables!"
+```
+Example Error:
+FATAL ERROR: Duplicate samples detected across grid tables!
+
+Nucleic Acid ID Duplicates:
+- Sample ID 'SAMPLE123' found in both:
+  * grid_table_OSJKAI.1.csv (well A1)
+  * grid_table_OSJKAI.2.csv (well B2)
+
+Laboratory safety requires unique samples across all grid tables.
+Please resolve duplicates before proceeding.
+```
+**Resolution**: Remove duplicate samples from grid table files or verify sample IDs are correct
+
+#### "FATAL ERROR: Empty or missing Nucleic Acid ID found!"
+```
+Example Error:
+FATAL ERROR: Empty or missing Nucleic Acid ID found!
+
+File: grid_table_OSJKAI.2.csv
+Row: 15
+Well: C3
+Plate: 27-810156
+
+All samples must have valid Nucleic Acid IDs for laboratory safety.
+Please verify data integrity before proceeding.
+```
+**Resolution**: Fill in missing Nucleic Acid IDs in the specified file and location
+
+#### "FATAL ERROR: X samples from database not found in grid tables!"
+```
+Example Error:
+FATAL ERROR: 2 samples from database not found in grid tables!
+
+Missing Samples:
+Destination_Well | Destination_Plate | Internal_Name | Source_Plate | Source_Well
+-------------------------------------------------------------------------------
+A1              | 27-810155        | Sample001     | Prtist.13    | B2
+B3              | 27-810156        | Sample045     | Prtist.14    | C5
+
+All database samples must be present in grid tables for laboratory safety.
+Please verify grid table completeness before proceeding.
+```
+**Resolution**: Add missing samples to appropriate grid table files
 
 #### "Merge validation failed"
 - Ensure well positions in database match those in grid table
@@ -202,18 +312,34 @@ python test_SPS_make_illumina_index_and_FA_files_NEW.py
 
 ## Version History
 
-### NEW Version (Current)
+### Enhanced Multi-Grid Table Version (Current)
+- **Multi-grid table processing**: Processes ALL valid grid table files in directory
+- **Comprehensive duplicate detection**: Validates samples across all files with multiple criteria
+- **Missing sample identification**: Ensures all database samples are present in grid tables
+- **Enhanced safety validation**: Prevents laboratory automation errors with detailed reporting
+- **Updated column headers**: Supports current laboratory format (`Library Plate Label`, `Library Plate Container Barcode`)
+- **Backward compatibility**: Single-file workflows still fully supported
+- **Enhanced error reporting**: Detailed location information and resolution guidance
+- **Laboratory safety features**: Comprehensive validation before automation begins
 - Complete rewrite with new workflow
 - Database merging instead of creation
 - Enhanced validation and error handling
 - Improved file organization and sorting
 - Comprehensive automated testing
 
+### Previous NEW Version
+- Complete rewrite with new workflow
+- Database merging instead of creation
+- Enhanced validation and error handling
+- Improved file organization and sorting
+- Single grid table file processing
+
 ### Original Version
 - Processed Echo files and data warehouse exports
 - Created new databases from scratch
 - Basic error handling
 - Manual file organization
+- Single file processing only
 
 ## Support
 

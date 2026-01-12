@@ -3,26 +3,39 @@
 # USAGE: python SPS_make_illumina_index_and_FA_files_NEW.py
 
 """
-SPS Library Creation Script - Revised Version
+SPS Library Creation Script - Enhanced Multi-Grid Table Version
 
-This script automatically detects a grid table CSV file in the current working
-directory and merges it with an existing project_summary.db database to generate
-all necessary files for library preparation:
+This script automatically detects ALL valid grid table CSV files in the current
+working directory and merges them with an existing project_summary.db database
+to generate all necessary files for library preparation:
 - Echo transfer files
 - Illumina index transfer files
 - Fragment Analyzer (FA) input files
 - Dilution transfer files
 - Bartender barcode label files
 
+ENHANCED FEATURES:
+- Multi-grid table processing: Processes ALL valid grid table files in directory
+- Comprehensive duplicate detection: Validates samples across all files
+- Missing sample identification: Ensures all database samples are present
+- Enhanced safety validation: Prevents laboratory automation errors
+- Backward compatibility: Single-file workflows still supported
+
 The script archives existing database files before creating updated versions.
 
 Grid Table Requirements:
-The grid table CSV file must contain these required columns:
-- Well
-- Aliquot Plate Label
-- Illumina Library
-- Container Barcode
-- Nucleic Acid ID
+Each grid table CSV file must contain these required columns:
+- Well: Well position (e.g., A1, B2, C3)
+- Library Plate Label: Destination plate name/identifier
+- Illumina Library: Library identifier
+- Library Plate Container Barcode: Destination plate barcode
+- Nucleic Acid ID: Sample identifier (REQUIRED - cannot be empty)
+
+Safety Features:
+- FATAL ERROR on duplicate samples across files
+- FATAL ERROR on missing Nucleic Acid IDs
+- FATAL ERROR on missing database samples in grid tables
+- Comprehensive validation with detailed error reporting
 """
 
 import pandas as pd
@@ -159,28 +172,259 @@ def read_project_database(base_dir):
         raise RuntimeError(f"Error reading database: {e}")
 
 
-def read_grid_table(filename):
-    """Read and validate the grid table CSV file."""
-    grid_path = Path(filename)
+def read_multiple_grid_tables(grid_table_files):
+    """Read and concatenate multiple grid table files with comprehensive validation.
     
-    if not grid_path.exists():
-        raise FileNotFoundError(f"Grid table file not found: {filename}")
+    This function processes multiple grid table CSV files, validates their structure
+    and content, detects duplicate samples across files, and combines them into a
+    single DataFrame for downstream processing. All validation errors are FATAL.
     
-    try:
-        grid_df = pd.read_csv(grid_path)
+    Args:
+        grid_table_files (list): List of grid table file paths as strings
         
-        # Validate required columns
-        required_cols = ['Well', 'Aliquot Plate Label', 'Illumina Library', 'Container Barcode', 'Nucleic Acid ID']
-        missing_cols = [col for col in required_cols if col not in grid_df.columns]
+    Returns:
+        pd.DataFrame: Concatenated and validated grid table data with all samples
         
-        if missing_cols:
-            raise ValueError(f"Missing required columns in grid table: {missing_cols}")
+    Raises:
+        ValueError: If no files provided or duplicate samples found (FATAL)
+        FileNotFoundError: If any grid table file not found (FATAL)
+        RuntimeError: If file reading fails (FATAL)
         
-        print(f"Successfully read {len(grid_df)} rows from grid table")
-        return grid_df
+    Validation Process:
+        1. Validates each file exists and is readable
+        2. Checks required column headers in each file
+        3. Detects duplicate samples across ALL files (FATAL if found)
+        4. Validates Nucleic Acid IDs are not empty (FATAL if empty)
+        5. Combines all valid data into single DataFrame
         
-    except Exception as e:
-        raise RuntimeError(f"Error reading grid table: {e}")
+    Required Columns (validated for each file):
+        - Well: Well position (e.g., A1, B2, C3)
+        - Library Plate Label: Destination plate name
+        - Illumina Library: Library identifier
+        - Library Plate Container Barcode: Destination plate barcode
+        - Nucleic Acid ID: Sample identifier (cannot be empty)
+        
+    Duplicate Detection:
+        - Well + Library Plate Label combinations
+        - Nucleic Acid ID duplicates
+        - Container Barcode + Well combinations
+        
+    Example:
+        >>> files = ['grid1.csv', 'grid2.csv', 'grid3.csv']
+        >>> combined_df = read_multiple_grid_tables(files)
+        Successfully read 32 rows from grid1.csv
+        Successfully read 28 rows from grid2.csv
+        Successfully read 35 rows from grid3.csv
+        ✅ No duplicate samples detected across grid tables
+        Successfully combined 3 grid table file(s) with 95 total samples
+    """
+    if not grid_table_files:
+        raise ValueError("No grid table files provided")
+    
+    grid_dataframes = []
+    
+    # Read each grid table file
+    for filename in grid_table_files:
+        grid_path = Path(filename)
+        
+        if not grid_path.exists():
+            raise FileNotFoundError(f"Grid table file not found: {filename}")
+        
+        try:
+            grid_df = pd.read_csv(grid_path)
+            
+            # Validate required columns
+            required_cols = ['Well', 'Library Plate Label', 'Illumina Library', 'Library Plate Container Barcode', 'Nucleic Acid ID']
+            missing_cols = [col for col in required_cols if col not in grid_df.columns]
+            
+            if missing_cols:
+                raise ValueError(f"Missing required columns in {filename}: {missing_cols}")
+            
+            # Store dataframe with source file info
+            grid_dataframes.append((filename, grid_df))
+            
+            print(f"Successfully read {len(grid_df)} rows from {Path(filename).name}")
+            
+        except Exception as e:
+            raise RuntimeError(f"Error reading grid table {filename}: {e}")
+    
+    # Detect duplicate samples across files (FATAL if found)
+    duplicate_report = detect_duplicate_samples(grid_dataframes)
+    print("✅ No duplicate samples detected across grid tables")
+    
+    # Concatenate all dataframes
+    combined_df = pd.concat([df for _, df in grid_dataframes], ignore_index=True)
+    
+    print(f"Successfully combined {len(grid_dataframes)} grid table file(s) with {len(combined_df)} total samples")
+    
+    return combined_df
+
+
+def detect_duplicate_samples(grid_dataframes):
+    """Detect duplicate samples across multiple grid tables with comprehensive validation.
+    
+    This function performs critical safety validation by detecting duplicate samples
+    across multiple grid table files using multiple criteria. Any duplicates found
+    result in FATAL ERROR termination to prevent laboratory automation errors.
+    
+    Args:
+        grid_dataframes (list): List of (filename, dataframe) tuples
+        
+    Returns:
+        dict: Empty dict if no duplicates found (function exits on duplicates)
+        
+    Raises:
+        ValueError: If duplicates found or empty Nucleic Acid IDs detected (FATAL ERROR)
+        
+    Validation Criteria:
+        1. Well + Library Plate Label combinations (must be unique across files)
+        2. Nucleic Acid ID duplicates (must be unique across files)
+        3. Container Barcode + Well combinations (must be unique across files)
+        4. Empty/missing Nucleic Acid IDs (FATAL - laboratory safety requirement)
+        
+    Error Reporting:
+        - Detailed location information (filename, row, well, plate)
+        - Multiple duplicate types reported simultaneously
+        - Clear error messages for laboratory technicians
+        - Specific guidance for resolution
+        
+    Laboratory Safety:
+        - Prevents duplicate sample processing
+        - Ensures sample traceability
+        - Validates data integrity before automation
+        - Protects against cross-contamination
+        
+    Example Error Output:
+        FATAL ERROR: Duplicate samples detected across grid tables!
+        
+        Nucleic Acid ID Duplicates:
+        - Sample ID 'SAMPLE123' found in both:
+          * grid_table_1.csv (well A1)
+          * grid_table_2.csv (well B2)
+          
+        Laboratory safety requires unique samples across all grid tables.
+        Please resolve duplicates before proceeding.
+    """
+    all_samples = []
+    duplicate_report = {}
+    
+    # Collect all samples with their source file information
+    for filename, df in grid_dataframes:
+        for idx, row in df.iterrows():
+            # Check for empty/NaN Nucleic Acid ID - this is a fatal error
+            nucleic_acid_id = row['Nucleic Acid ID']
+            if pd.isna(nucleic_acid_id) or str(nucleic_acid_id).strip() == '':
+                error_msg = f"FATAL ERROR: Empty or missing Nucleic Acid ID found!\n\n"
+                error_msg += f"File: {filename}\n"
+                error_msg += f"Row: {idx + 2}\n"  # +2 because pandas is 0-indexed and CSV has header
+                error_msg += f"Well: {row['Well']}\n"
+                error_msg += f"Plate: {row['Library Plate Label']}\n\n"
+                error_msg += "All samples must have valid Nucleic Acid IDs for laboratory safety.\n"
+                error_msg += "Please verify data integrity before proceeding."
+                raise ValueError(error_msg)
+            
+            sample_info = {
+                'filename': filename,
+                'well': row['Well'],
+                'plate_label': row['Library Plate Label'],
+                'nucleic_acid_id': nucleic_acid_id,
+                'container_barcode': row['Library Plate Container Barcode'],
+                'well_plate_key': f"{row['Well']}_{row['Library Plate Label']}",
+                'container_well_key': f"{row['Library Plate Container Barcode']}_{row['Well']}"
+            }
+            all_samples.append(sample_info)
+    
+    # Check for duplicates using multiple criteria
+    duplicates_found = False
+    
+    # Check 1: (Well, Library Plate Label) combination duplicates
+    well_plate_seen = {}
+    for sample in all_samples:
+        key = sample['well_plate_key']
+        if key in well_plate_seen:
+            duplicates_found = True
+            if 'well_plate_duplicates' not in duplicate_report:
+                duplicate_report['well_plate_duplicates'] = []
+            duplicate_report['well_plate_duplicates'].append({
+                'key': key,
+                'first_file': well_plate_seen[key]['filename'],
+                'second_file': sample['filename'],
+                'well': sample['well'],
+                'plate_label': sample['plate_label']
+            })
+        else:
+            well_plate_seen[key] = sample
+    
+    # Check 2: Nucleic Acid ID duplicates
+    nucleic_acid_seen = {}
+    for sample in all_samples:
+        key = sample['nucleic_acid_id']
+        if key in nucleic_acid_seen:
+            duplicates_found = True
+            if 'nucleic_acid_duplicates' not in duplicate_report:
+                duplicate_report['nucleic_acid_duplicates'] = []
+            duplicate_report['nucleic_acid_duplicates'].append({
+                'nucleic_acid_id': key,
+                'first_file': nucleic_acid_seen[key]['filename'],
+                'second_file': sample['filename'],
+                'first_well': nucleic_acid_seen[key]['well'],
+                'second_well': sample['well']
+            })
+        else:
+            nucleic_acid_seen[key] = sample
+    
+    # Check 3: (Container Barcode, Well) combination duplicates
+    container_well_seen = {}
+    for sample in all_samples:
+        key = sample['container_well_key']
+        if key in container_well_seen:
+            duplicates_found = True
+            if 'container_well_duplicates' not in duplicate_report:
+                duplicate_report['container_well_duplicates'] = []
+            duplicate_report['container_well_duplicates'].append({
+                'key': key,
+                'first_file': container_well_seen[key]['filename'],
+                'second_file': sample['filename'],
+                'container_barcode': sample['container_barcode'],
+                'well': sample['well']
+            })
+        else:
+            container_well_seen[key] = sample
+    
+    # If duplicates found, raise fatal error
+    if duplicates_found:
+        error_msg = "FATAL ERROR: Duplicate samples detected across grid tables!\n\n"
+        
+        if 'well_plate_duplicates' in duplicate_report:
+            error_msg += "Well + Plate Label Duplicates:\n"
+            for dup in duplicate_report['well_plate_duplicates']:
+                error_msg += f"- Well {dup['well']} on plate '{dup['plate_label']}' found in both:\n"
+                error_msg += f"  * {dup['first_file']}\n"
+                error_msg += f"  * {dup['second_file']}\n"
+            error_msg += "\n"
+        
+        if 'nucleic_acid_duplicates' in duplicate_report:
+            error_msg += "Nucleic Acid ID Duplicates:\n"
+            for dup in duplicate_report['nucleic_acid_duplicates']:
+                error_msg += f"- Sample ID '{dup['nucleic_acid_id']}' found in both:\n"
+                error_msg += f"  * {dup['first_file']} (well {dup['first_well']})\n"
+                error_msg += f"  * {dup['second_file']} (well {dup['second_well']})\n"
+            error_msg += "\n"
+        
+        if 'container_well_duplicates' in duplicate_report:
+            error_msg += "Container Barcode + Well Duplicates:\n"
+            for dup in duplicate_report['container_well_duplicates']:
+                error_msg += f"- Container '{dup['container_barcode']}' well {dup['well']} found in both:\n"
+                error_msg += f"  * {dup['first_file']}\n"
+                error_msg += f"  * {dup['second_file']}\n"
+            error_msg += "\n"
+        
+        error_msg += "Laboratory safety requires unique samples across all grid tables.\n"
+        error_msg += "Please resolve duplicates before proceeding."
+        
+        raise ValueError(error_msg)
+    
+    return duplicate_report
 
 
 def convert_well_to_row_col(well_position):
@@ -220,16 +464,115 @@ def convert_well_to_row_col(well_position):
         raise ValueError(f"Invalid well position format: {well_position}")
 
 
+def identify_missing_samples(db_df, combined_grid_df):
+    """Identify samples present in database but missing from grid tables.
+    
+    This function performs critical validation to ensure ALL database samples
+    are present in the combined grid table data. Missing samples result in
+    FATAL ERROR termination to prevent incomplete laboratory automation.
+    
+    Args:
+        db_df (pd.DataFrame): Database samples from project_summary.db
+        combined_grid_df (pd.DataFrame): Combined grid table data from all files
+        
+    Returns:
+        pd.DataFrame: Empty DataFrame if no missing samples (function exits on missing)
+        
+    Raises:
+        ValueError: If missing samples found (FATAL ERROR)
+        
+    Validation Process:
+        1. Creates merge keys from Well + Plate combinations
+        2. Compares database keys against grid table keys
+        3. Identifies any database samples not in grid tables
+        4. Generates detailed missing sample report with location info
+        5. Raises FATAL ERROR if any samples missing
+        
+    Laboratory Safety:
+        - Ensures complete sample coverage for automation
+        - Prevents partial processing of sample sets
+        - Validates data integrity before liquid handling
+        - Protects against missing sample errors in downstream analysis
+        
+    Error Reporting:
+        - Detailed table showing missing samples
+        - Source plate and well information
+        - Internal sample names and identifiers
+        - Clear guidance for resolution
+        
+    Example Error Output:
+        FATAL ERROR: 3 samples from database not found in grid tables!
+        
+        Missing Samples:
+        Destination_Well | Destination_Plate | Internal_Name | Source_Plate | Source_Well
+        -------------------------------------------------------------------------------
+        A1              | 27-810155        | Sample001     | Prtist.13    | B2
+        B3              | 27-810156        | Sample045     | Prtist.14    | C5
+        
+        All database samples must be present in grid tables for laboratory safety.
+        Please verify grid table completeness before proceeding.
+    """
+    # Create merge keys for comparison
+    db_keys = db_df[['Destination_Well', 'Destination_plate_name']].copy()
+    db_keys['db_key'] = db_keys['Destination_Well'] + '_' + db_keys['Destination_plate_name']
+    
+    grid_keys = combined_grid_df[['Well', 'Library Plate Label']].copy()
+    grid_keys['grid_key'] = grid_keys['Well'] + '_' + grid_keys['Library Plate Label']
+    
+    # Find database samples not present in grid tables
+    db_key_set = set(db_keys['db_key'])
+    grid_key_set = set(grid_keys['grid_key'])
+    
+    missing_keys = db_key_set - grid_key_set
+    
+    if missing_keys:
+        # Create detailed missing samples report
+        missing_samples = []
+        for missing_key in missing_keys:
+            well, plate = missing_key.split('_', 1)
+            db_sample = db_df[(db_df['Destination_Well'] == well) &
+                             (db_df['Destination_plate_name'] == plate)]
+            if not db_sample.empty:
+                sample_info = db_sample.iloc[0]
+                missing_samples.append({
+                    'Destination_Well': well,
+                    'Destination_plate_name': plate,
+                    'internal_name': sample_info.get('internal_name', 'N/A'),
+                    'plate_id': sample_info.get('plate_id', 'N/A'),
+                    'source_well': sample_info.get('source_well', 'N/A')
+                })
+        
+        missing_df = pd.DataFrame(missing_samples)
+        
+        # Create detailed error message
+        error_msg = f"FATAL ERROR: {len(missing_samples)} samples from database not found in grid tables!\n\n"
+        error_msg += "Missing Samples:\n"
+        error_msg += "Destination_Well | Destination_Plate | Internal_Name | Source_Plate | Source_Well\n"
+        error_msg += "-" * 80 + "\n"
+        
+        for _, sample in missing_df.iterrows():
+            error_msg += f"{sample['Destination_Well']:15} | {sample['Destination_plate_name']:16} | "
+            error_msg += f"{sample['internal_name']:13} | {sample['plate_id']:12} | {sample['source_well']}\n"
+        
+        error_msg += "\nAll database samples must be present in grid tables for laboratory safety.\n"
+        error_msg += "Please verify grid table completeness before proceeding."
+        
+        raise ValueError(error_msg)
+    
+    print(f"✅ All {len(db_df)} database samples found in grid tables")
+    return pd.DataFrame()  # Return empty DataFrame if no missing samples
+
+
 def validate_and_merge_data(db_df, grid_df):
     """Merge database and grid table data with validation."""
     print("Validating and merging data...")
     
     # Select only the 5 columns we need from grid table
-    grid_subset = grid_df[['Well', 'Aliquot Plate Label', 'Illumina Library', 'Container Barcode', 'Nucleic Acid ID']].copy()
+    grid_subset = grid_df[['Well', 'Library Plate Label', 'Illumina Library', 'Library Plate Container Barcode', 'Nucleic Acid ID']].copy()
     
     # Rename columns for final output
     grid_subset = grid_subset.rename(columns={
-        'Container Barcode': 'Destination_Plate_Barcode',
+        'Library Plate Container Barcode': 'Destination_Plate_Barcode',
         'Nucleic Acid ID': 'sample_id'
     })
     
@@ -238,7 +581,7 @@ def validate_and_merge_data(db_df, grid_df):
         db_df,
         grid_subset,
         left_on=['Destination_Well', 'Destination_plate_name'],
-        right_on=['Well', 'Aliquot Plate Label'],
+        right_on=['Well', 'Library Plate Label'],
         how='inner'
     )
     
@@ -252,7 +595,7 @@ def validate_and_merge_data(db_df, grid_df):
         raise ValueError(f"Merge validation failed: {missing_grid} rows from grid table not matched")
     
     # Drop the merge key columns from grid table (we keep the database versions)
-    merged_df = merged_df.drop(columns=['Well', 'Aliquot Plate Label'])
+    merged_df = merged_df.drop(columns=['Well', 'Library Plate Label'])
     
     print(f"Successfully merged {len(merged_df)} rows with perfect 1:1 match")
     return merged_df
@@ -605,7 +948,7 @@ def find_csv_files(base_dir):
 
 def validate_grid_table_columns(csv_file):
     """Check if CSV file has required grid table columns without full validation."""
-    required_cols = ['Well', 'Aliquot Plate Label', 'Illumina Library', 'Container Barcode', 'Nucleic Acid ID']
+    required_cols = ['Well', 'Library Plate Label', 'Illumina Library', 'Library Plate Container Barcode', 'Nucleic Acid ID']
     
     try:
         # Read only the header row to check columns
@@ -621,9 +964,44 @@ def validate_grid_table_columns(csv_file):
         return False, f"Error reading file: {e}"
 
 
-def auto_detect_grid_table(base_dir):
-    """Automatically detect grid table file in working directory."""
-    print("Scanning current directory for grid table CSV file...")
+def find_all_grid_tables(base_dir):
+    """Find and validate ALL grid table files in directory.
+    
+    This function scans the current working directory for CSV files and validates
+    each one to determine if it contains the required grid table columns. It
+    supports multi-file processing by finding ALL valid grid table files rather
+    than just one.
+    
+    Args:
+        base_dir (Path): Base directory to scan for CSV files
+        
+    Returns:
+        list: List of valid grid table file paths as strings
+        
+    Raises:
+        SystemExit: If no valid grid tables found with detailed error message
+        
+    Validation Process:
+        1. Scans directory for all CSV files
+        2. Checks each CSV for required column headers
+        3. Reports invalid files with specific error messages
+        4. Returns all valid files for multi-grid processing
+        
+    Required Columns:
+        - Well: Well position (e.g., A1, B2, C3)
+        - Library Plate Label: Destination plate name
+        - Illumina Library: Library identifier
+        - Library Plate Container Barcode: Destination plate barcode
+        - Nucleic Acid ID: Sample identifier
+        
+    Example:
+        >>> grid_files = find_all_grid_tables(Path.cwd())
+        Found 3 valid grid table file(s):
+        - grid_table_OSJKAI.1.csv
+        - grid_table_OSJKAI.2.csv
+        - grid_table_OSJKAI.3.csv
+    """
+    print("Scanning current directory for grid table CSV files...")
     
     # Find all CSV files
     csv_files = find_csv_files(base_dir)
@@ -632,9 +1010,9 @@ def auto_detect_grid_table(base_dir):
         print("\nERROR: No CSV files found in current directory.")
         print("\nA grid table CSV file must contain these required columns:")
         print("- Well")
-        print("- Aliquot Plate Label")
+        print("- Library Plate Label")
         print("- Illumina Library")
-        print("- Container Barcode")
+        print("- Library Plate Container Barcode")
         print("- Nucleic Acid ID")
         print("\nPlease ensure your grid table file is in the current directory.")
         sys.exit()
@@ -658,37 +1036,98 @@ def auto_detect_grid_table(base_dir):
             print(f"- {csv_file.name}: {error_msg}")
         print("\nA grid table CSV file must contain these required columns:")
         print("- Well")
-        print("- Aliquot Plate Label")
+        print("- Library Plate Label")
         print("- Illumina Library")
-        print("- Container Barcode")
+        print("- Library Plate Container Barcode")
         print("- Nucleic Acid ID")
         print("\nPlease ensure your grid table file contains all required columns.")
         sys.exit()
-        
-    elif len(valid_files) > 1:
-        print(f"\nERROR: Multiple valid grid table files found in current directory.")
-        print(f"\nValid grid table files detected:")
-        for valid_file in valid_files:
-            print(f"- {valid_file.name}")
-        print(f"\nPlease remove extra grid table files, leaving only one in the current directory.")
-        sys.exit()
     
-    # Exactly one valid file found
-    grid_table_file = valid_files[0]
-    print(f"Found valid grid table: {grid_table_file.name}")
-    return str(grid_table_file)
+    # Return all valid files
+    print(f"Found {len(valid_files)} valid grid table file(s):")
+    for valid_file in valid_files:
+        print(f"- {valid_file.name}")
+    
+    return [str(f) for f in valid_files]
+
+
+def auto_detect_grid_table(base_dir):
+    """Automatically detect grid table files in working directory with multi-file support.
+    
+    This function has been enhanced to support processing multiple grid table files
+    simultaneously, replacing the original single-file detection. It maintains
+    backward compatibility while enabling multi-grid table workflows.
+    
+    Args:
+        base_dir (Path): Base directory to scan for grid table files
+        
+    Returns:
+        list: List of valid grid table file paths as strings
+        
+    Raises:
+        SystemExit: If no valid grid tables found
+        
+    Enhanced Features:
+        - Multi-file detection: Finds ALL valid grid table files
+        - Backward compatibility: Single-file workflows still supported
+        - Comprehensive validation: Each file validated for required columns
+        - Detailed reporting: Lists all found files with validation status
+        
+    Example Output:
+        Scanning current directory for grid table CSV files...
+        Found 3 valid grid table file(s):
+        - grid_table_OSJKAI.1.csv
+        - grid_table_OSJKAI.2.csv
+        - grid_table_OSJKAI.3.csv
+    """
+    # Use the new find_all_grid_tables function for multi-file support
+    return find_all_grid_tables(base_dir)
 
 
 def main():
-    """Main execution function."""
+    """Main execution function with enhanced multi-grid table processing.
+    
+    This function orchestrates the complete SPS library creation workflow with
+    enhanced multi-grid table support, comprehensive validation, and safety features.
+    
+    Workflow Steps:
+        1. Create directory structure for output files
+        2. Auto-detect ALL valid grid table files in current directory
+        3. Read project database and combine multiple grid tables
+        4. Perform comprehensive duplicate and missing sample validation
+        5. Merge and validate data with perfect 1:1 correspondence
+        6. Archive existing database files with timestamps
+        7. Generate all required output files for laboratory automation
+        8. Create success marker for workflow manager integration
+        
+    Enhanced Features:
+        - Multi-grid table processing with automatic file detection
+        - Comprehensive duplicate sample detection across all files
+        - Missing sample identification and validation
+        - Enhanced safety validation with detailed error reporting
+        - Backward compatibility with single-file workflows
+        
+    Output Files Generated:
+        - Echo transfer files (grouped by destination plate)
+        - Illumina index transfer files
+        - Fragment Analyzer input files
+        - Dilution transfer files
+        - Bartender barcode label files
+        - Threshold files for FA analysis
+        - Updated project database and CSV files
+        
+    Error Handling:
+        All validation errors are FATAL and terminate execution with
+        detailed error messages and resolution guidance.
+    """
     try:
         # Create directory structure
         print("Creating directory structure...")
         directories = create_directories()
         BASE_DIR, PROJECT_DIR, LIB_DIR, ECHO_DIR, FA_DIR, INDEX_DIR, ANALYZE_DIR, FTRAN_DIR, ARCHIVE_DIR = directories
         
-        # Auto-detect grid table file
-        grid_table_file = auto_detect_grid_table(BASE_DIR)
+        # Auto-detect grid table files (supports multiple files)
+        grid_table_files = auto_detect_grid_table(BASE_DIR)
         
         # Get plate configuration
         well_list, convert_96_to_384, convert_384_to_96 = get_plate_type()
@@ -696,7 +1135,10 @@ def main():
         # Read input data
         print("Reading input data...")
         db_df = read_project_database(BASE_DIR)
-        grid_df = read_grid_table(grid_table_file)
+        grid_df = read_multiple_grid_tables(grid_table_files)
+        
+        # Check for missing samples before merge
+        identify_missing_samples(db_df, grid_df)
         
         # Merge and validate data
         merged_df = validate_and_merge_data(db_df, grid_df)
@@ -740,11 +1182,12 @@ def main():
         print("Creating Bartender label file...")
         make_bartender_labels(merged_df, directories)
         
-        # Move grid table file to library directory
-        grid_path = Path(grid_table_file)
-        if grid_path.exists():
-            grid_path.rename(LIB_DIR / grid_table_file)
-            # print(f"Moved {grid_table_file} to library directory")
+        # Move grid table files to library directory
+        for grid_file in grid_table_files:
+            grid_path = Path(grid_file)
+            if grid_path.exists():
+                grid_path.rename(LIB_DIR / grid_path.name)
+                # print(f"Moved {grid_path.name} to library directory")
         
         print("\n" + "="*50)
         print("SCRIPT COMPLETED SUCCESSFULLY!")
