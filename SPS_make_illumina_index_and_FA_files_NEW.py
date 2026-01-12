@@ -106,12 +106,12 @@ def create_directories():
     ANALYZE_DIR = PROJECT_DIR / "B_first_attempt_fa_result"
     ANALYZE_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Second attempt directories (for future use)
-    SECOND_DIR = PROJECT_DIR / "C_second_attempt_make_lib"
-    SECOND_DIR.mkdir(parents=True, exist_ok=True)
+    # # Second attempt directories (for future use)
+    # SECOND_DIR = PROJECT_DIR / "C_second_attempt_make_lib"
+    # SECOND_DIR.mkdir(parents=True, exist_ok=True)
     
-    SECFA_DIR = PROJECT_DIR / "D_second_attempt_fa_result"
-    SECFA_DIR.mkdir(parents=True, exist_ok=True)
+    # SECFA_DIR = PROJECT_DIR / "D_second_attempt_fa_result"
+    # SECFA_DIR.mkdir(parents=True, exist_ok=True)
     
     # Pooling workflow directories
     POOL_DIR = BASE_DIR / "2_pooling"
