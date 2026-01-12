@@ -87,6 +87,57 @@ def readSQLdb():
 
 ##########################
 ##########################
+def handleFirstAttemptOnly(lib_df):
+    """
+    Create missing Redo columns when processing first-attempt-only data.
+    This simulates what the noRework() function would have created.
+    
+    Args:
+        lib_df: DataFrame with first attempt data only
+        
+    Returns:
+        DataFrame with all required Redo columns added
+        
+    Raises:
+        KeyError: If required first attempt columns are missing
+        ValueError: If data validation fails
+    """
+    # Validate required columns exist
+    required_columns = ['Passed_library', 'FA_Well']
+    missing_columns = [col for col in required_columns if col not in lib_df.columns]
+    if missing_columns:
+        raise KeyError(f"Missing required columns for first attempt processing: {missing_columns}")
+    
+    # Create Total_passed_attempts (core column for all logic)
+    lib_df['Total_passed_attempts'] = lib_df['Passed_library'].fillna(0)
+    
+    # Create Redo columns with appropriate values for "no second attempt"
+    lib_df['Redo_Passed_library'] = 0  # No second attempt happened
+    
+    # Create empty/placeholder Redo columns (will be empty since no second attempt)
+    lib_df['Redo_dilution_factor'] = ""
+    lib_df['Redo_FA_Well'] = lib_df['FA_Well']  # Copy from first attempt (gets dropped later)
+    lib_df['Redo_Destination_Plate_Barcode'] = ""
+    lib_df['Redo_Destination_Well'] = ""
+    lib_df['Redo_Illumina_index_set'] = ""
+    lib_df['Redo_Illumina_index'] = ""
+    lib_df['Redo_ng/uL'] = ""
+    lib_df['Redo_nmole/L'] = ""
+    lib_df['Redo_Avg. Size'] = ""
+    
+    # Validate that Total_passed_attempts was created successfully
+    if lib_df['Total_passed_attempts'].isnull().any():
+        raise ValueError("Failed to create Total_passed_attempts column properly")
+    
+    print("✓ Created missing Redo columns for first-attempt-only workflow")
+    
+    return lib_df
+##########################
+##########################
+
+
+##########################
+##########################
 def updateLibInfo(updated_file_name):
 
     # create df from fa_analysis_summary.txt file
@@ -123,6 +174,16 @@ def updateLibInfo(updated_file_name):
     
     # remove redundant columns after merging
     lib_df.drop(lib_df.filter(regex='_y$').columns, axis=1, inplace=True)
+    
+    # Handle first-attempt-only scenario by creating missing columns
+    if updated_file_name == FIRST_FA_DIR / 'updated_fa_analysis_summary.txt':
+        try:
+            lib_df = handleFirstAttemptOnly(lib_df)
+        except (KeyError, ValueError) as e:
+            print(f'\nERROR: Failed to create missing columns for first-attempt-only workflow: {e}')
+            print('This may indicate corrupted data or missing required columns.')
+            print('Aborting script.\n')
+            sys.exit()
     
     # remove redundante columns
     if 'Redo_FA_Well' in lib_df.columns:
@@ -163,50 +224,100 @@ def updateLibInfo(updated_file_name):
 ##########################
 def selectPlateForPooling(lib_df):
 
-    # select samples that passed >=1 attempt at lib cration
-    passed_df = lib_df[lib_df['Total_passed_attempts'] >= 1].copy()
+    # Create Pool columns for ALL samples (both passed and failed)
+    # Start with a copy of the entire dataframe
+    final_df = lib_df.copy()
 
-    # create empty columns for pooling source plate and wells
-    passed_df['Pool_source_plate'] = ""
+    # Initialize Pool columns for ALL samples
+    final_df['Pool_source_plate'] = ""
+    final_df['Pool_source_well'] = ""
+    final_df['Pool_Illumina_index_set'] = ""
+    final_df['Pool_Illumina_index'] = ""
+    final_df['Pool_dilution_factor'] = ""
+    final_df['Pool_DNA_conc_ng/uL'] = 0
+    final_df['Pool_nmole/L'] = 0
+    final_df['Pool_Avg. Size'] = 0
 
-    passed_df['Pool_source_well'] = ""
+    # For ALL samples, populate Pool source plate/well/index/dilution based on which attempt was made
+    # Preserve original logic: Total_passed_attempts == 2 gets priority, then Redo_Passed_library == 1, then first attempt
+    final_df['Pool_source_plate'] = np.where(
+        final_df['Total_passed_attempts'] == 2,
+        final_df['Redo_Destination_Plate_Barcode'],
+        (np.where(final_df['Redo_Passed_library'] == 1,
+                  final_df['Redo_Destination_Plate_Barcode'],
+                  final_df['Destination_Plate_Barcode']))
+    )
 
-    # select redo plate over intial plate if lib passed in both attempts
-    passed_df['Pool_source_plate'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_Destination_Plate_Barcode'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_Destination_Plate_Barcode'], passed_df['Destination_Plate_Barcode'])))
+    final_df['Pool_source_well'] = np.where(
+        final_df['Total_passed_attempts'] == 2,
+        final_df['Redo_Destination_Well'],
+        (np.where(final_df['Redo_Passed_library'] == 1,
+                  final_df['Redo_Destination_Well'],
+                  final_df['Destination_Well']))
+    )
 
-    passed_df['Pool_source_well'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_Destination_Well'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_Destination_Well'], passed_df['Destination_Well'])))
-
-    passed_df['Pool_Illumina_index_set'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_Illumina_index_set'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_Illumina_index_set'], passed_df['Illumina_index_set'])))
-
-    passed_df['Pool_Illumina_index'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_Illumina_index'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_Illumina_index'], passed_df['Illumina_index'])))
-
-    passed_df['Pool_dilution_factor'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_dilution_factor'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_dilution_factor'], passed_df['dilution_factor'])))
-    
-    passed_df['Pool_DNA_conc_ng/uL'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_ng/uL'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_ng/uL'], passed_df['ng/uL'])))
-
-    passed_df['Pool_nmole/L'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_nmole/L'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_nmole/L'], passed_df['nmole/L'])))
-
-    passed_df['Pool_Avg. Size'] = np.where(
-        passed_df['Total_passed_attempts'] == 2, passed_df['Redo_Avg. Size'], (np.where(passed_df['Redo_Passed_library'] == 1, passed_df['Redo_Avg. Size'], passed_df['Avg. Size'])))
-
-    # add "pool" columns from passed_df to lib_df. The pool column contain info on specific
-    # plates and libs that will go into pooling at a later step.
-    final_df = pd.merge(lib_df,passed_df, how = 'outer', left_on=['sample_id'], right_on=['sample_id'], suffixes=('', '_y'))
-
-    # remove redundant columns after merging
-    final_df.drop(final_df.filter(regex='_y$').columns, axis=1, inplace=True)
-    
-    final_df['Pool_Illumina_index_set'] = np.where(final_df['Total_passed_attempts'] == 0, final_df['Illumina_index_set'], final_df['Pool_Illumina_index_set'])
+    final_df['Pool_Illumina_index_set'] = np.where(
+        final_df['Total_passed_attempts'] == 2,
+        final_df['Redo_Illumina_index_set'],
+        (np.where(final_df['Redo_Passed_library'] == 1,
+                  final_df['Redo_Illumina_index_set'],
+                  final_df['Illumina_index_set']))
+    )
 
     final_df['Pool_Illumina_index'] = np.where(
-        final_df['Total_passed_attempts'] == 0, final_df['Illumina_index'], final_df['Pool_Illumina_index'])
+        final_df['Total_passed_attempts'] == 2,
+        final_df['Redo_Illumina_index'],
+        (np.where(final_df['Redo_Passed_library'] == 1,
+                  final_df['Redo_Illumina_index'],
+                  final_df['Illumina_index']))
+    )
+
+    final_df['Pool_dilution_factor'] = np.where(
+        final_df['Total_passed_attempts'] == 2,
+        final_df['Redo_dilution_factor'],
+        (np.where(final_df['Redo_Passed_library'] == 1,
+                  final_df['Redo_dilution_factor'],
+                  final_df['dilution_factor']))
+    )
+    
+    # For concentration and size values: Only populate for PASSED libraries (Total_passed_attempts >= 1)
+    # Failed libraries (Total_passed_attempts == 0) keep the default values of 0
+    # Preserve original logic for passed libraries: Total_passed_attempts == 2 gets priority, then Redo_Passed_library == 1, then first attempt
+    final_df['Pool_DNA_conc_ng/uL'] = np.where(
+        final_df['Total_passed_attempts'] >= 1,
+        np.where(
+            final_df['Total_passed_attempts'] == 2,
+            final_df['Redo_ng/uL'],
+            (np.where(final_df['Redo_Passed_library'] == 1,
+                      final_df['Redo_ng/uL'],
+                      final_df['ng/uL']))
+        ),
+        0  # Failed libraries get 0
+    )
+
+    final_df['Pool_nmole/L'] = np.where(
+        final_df['Total_passed_attempts'] >= 1,
+        np.where(
+            final_df['Total_passed_attempts'] == 2,
+            final_df['Redo_nmole/L'],
+            (np.where(final_df['Redo_Passed_library'] == 1,
+                      final_df['Redo_nmole/L'],
+                      final_df['nmole/L']))
+        ),
+        0  # Failed libraries get 0
+    )
+
+    final_df['Pool_Avg. Size'] = np.where(
+        final_df['Total_passed_attempts'] >= 1,
+        np.where(
+            final_df['Total_passed_attempts'] == 2,
+            final_df['Redo_Avg. Size'],
+            (np.where(final_df['Redo_Passed_library'] == 1,
+                      final_df['Redo_Avg. Size'],
+                      final_df['Avg. Size']))
+        ),
+        0  # Failed libraries get 0
+    )
 
     return final_df
 
