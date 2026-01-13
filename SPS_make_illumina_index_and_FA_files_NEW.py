@@ -672,7 +672,7 @@ def prepare_echo_data(merged_df):
         'Destination_Plate_Barcode': 'Destination Plate Barcode'
     })
     
-    echo_df['Transfer Volume'] = 500
+    echo_df['Transfer Volume'] = 1000
     
     # Select final columns
     echo_final = echo_df[['Source Plate Name', 'Source Plate Barcode', 'Source Row', 'Source Column',
