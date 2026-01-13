@@ -73,7 +73,7 @@ def compareFolderFileNames(folder_path, file, folder_name):
     Raises:
         SystemExit: If plate names don't match
     """
-    print(f"Validating plate names for {folder_name}...")
+    # print(f"Validating plate names for {folder_name}...")
     
     # Read FA smear analysis output CSV file
     fa_df = pd.read_csv(folder_path / file, usecols=['Sample ID'])
@@ -85,16 +85,16 @@ def compareFolderFileNames(folder_path, file, folder_name):
     # For second attempt, expect .2F pattern
     plate_list = [s.split('_')[0] + 'F' for s in sample_list]
     
-    print(f"  Sample IDs found: {len(sample_list)} samples")
-    print(f"  Parsed plate names: {set(plate_list)}")
-    print(f"  Folder name: {folder_name}")
+    # print(f"  Sample IDs found: {len(sample_list)} samples")
+    # print(f"  Parsed plate names: {set(plate_list)}")
+    # print(f"  Folder name: {folder_name}")
     
     # Validate folder name matches parsed plate names
     if folder_name not in set(plate_list):
         print(f'\n\nMismatch between FA plate ID and sample names for plate {folder_name}. Aborting script\n')
         sys.exit()
     
-    print(f"  ✓ Validation passed for {folder_name}")
+    # print(f"  ✓ Validation passed for {folder_name}")
 ##########################
 ##########################
 
@@ -108,13 +108,14 @@ def getFAfiles(second_dir):
         second_dir: Path to the second attempt FA result directory
         
     Returns:
-        List of FA file names that were processed
+        Tuple of (List of FA file names that were processed, List of FA result directories for archiving)
         
     Raises:
         SystemExit: If no FA files are found or copying fails
     """
-    print(f"Scanning for FA files in: {second_dir}")
+    # print(f"Scanning for FA files in: {second_dir}")
     fa_files = []
+    fa_result_dirs_to_archive = []  # NEW: Track directories for archiving
     
     if not second_dir.exists():
         print(f"ERROR: Second attempt directory does not exist: {second_dir}")
@@ -122,13 +123,13 @@ def getFAfiles(second_dir):
     
     for direct in second_dir.iterdir():
         if direct.is_dir():
-            print(f"Processing date directory: {direct.name}")
+            # print(f"Processing date directory: {direct.name}")
             nxt_dir = direct
             
             # scan current directory and find subdirectories
             for fa in nxt_dir.iterdir():
                 if fa.is_dir():
-                    print(f"  Found FA plate directory: {fa.name}")
+                    # print(f"  Found FA plate directory: {fa.name}")
                     
                     # find full path to subdirectories
                     folder_path = fa
@@ -136,14 +137,14 @@ def getFAfiles(second_dir):
                     # extract name of FA plate by parsing the subdirectory name
                     folder_name = fa.name
                     folder_name = folder_name.split(' ')[0]
-                    print(f"  Parsed plate name: {folder_name}")
+                    # print(f"  Parsed plate name: {folder_name}")
                     
                     # search for smear analysis files in each subdirectory
                     smear_files = []
                     for file_path in fa.iterdir():
                         if file_path.name.endswith('Smear Analysis Result.csv'):
                             smear_files.append(file_path)
-                            print(f"    Found smear analysis file: {file_path.name}")
+                            # print(f"    Found smear analysis file: {file_path.name}")
                     
                     if not smear_files:
                         print(f"    No smear analysis files found in {fa.name}")
@@ -158,7 +159,7 @@ def getFAfiles(second_dir):
                     
                     # copy and rename smear analysis to main directory if good match
                     dest_file = second_dir / f'{folder_name}.csv'
-                    print(f"    Copying {source_file} -> {dest_file}")
+                    # print(f"    Copying {source_file} -> {dest_file}")
                     
                     try:
                         shutil.copy(source_file, dest_file)
@@ -166,8 +167,11 @@ def getFAfiles(second_dir):
                         # Verify the copy was successful
                         if dest_file.exists():
                             file_size = dest_file.stat().st_size
-                            print(f"    ✓ Copy successful: {dest_file} ({file_size} bytes)")
+                            # print(f"    ✓ Copy successful: {dest_file} ({file_size} bytes)")
                             fa_files.append(f'{folder_name}.csv')
+                            
+                            # NEW: Track this directory for archiving
+                            fa_result_dirs_to_archive.append(fa)
                         else:
                             print(f"    ERROR: Copy failed - destination file does not exist: {dest_file}")
                             sys.exit()
@@ -185,8 +189,8 @@ def getFAfiles(second_dir):
     for f in fa_files:
         print(f"  - {f}")
     
-    # return a list of FA plate names
-    return fa_files
+    # return both lists
+    return fa_files, fa_result_dirs_to_archive
 ##########################
 ##########################
 
@@ -205,7 +209,7 @@ def processFAfiles(my_fa_files):
     Raises:
         SystemExit: If processing fails or file counts don't match
     """
-    print(f"\nProcessing {len(my_fa_files)} FA files...")
+    # print(f"\nProcessing {len(my_fa_files)} FA files...")
     
     # create dict where  keys are FA file names and value are df's from those files
     fa_dict = {}
@@ -214,7 +218,7 @@ def processFAfiles(my_fa_files):
 
     # loop through all FA files and create df's stored in dict
     for f in my_fa_files:
-        print(f"Processing file: {f}")
+        # print(f"Processing file: {f}")
         
         file_path = SECOND_DIR / f
         if not file_path.exists():
@@ -225,7 +229,7 @@ def processFAfiles(my_fa_files):
             fa_dict[f] = pd.read_csv(file_path, usecols=[
                 'Well', 'Sample ID', 'ng/uL', 'nmole/L', 'Avg. Size'])
             
-            print(f"  Read {len(fa_dict[f])} rows from {f}")
+            # print(f"  Read {len(fa_dict[f])} rows from {f}")
 
             fa_dict[f] = fa_dict[f].rename(
                 columns={"Sample ID": "Redo_FA_Sample_ID", "Well": "Redo_FA_Well", 
@@ -247,7 +251,7 @@ def processFAfiles(my_fa_files):
                 'LibStd', case=False) == False]
             
             filtered_rows = len(fa_dict[f])
-            print(f"  Filtered out {initial_rows - filtered_rows} control rows, {filtered_rows} samples remaining")
+            # print(f"  Filtered out {initial_rows - filtered_rows} control rows, {filtered_rows} samples remaining")
 
             # create three new columns by parsing Sample_ID string using "_" as delimiter
             fa_dict[f][['Redo_FA_Destination_plate', 'Redo_FA_Sample', 'Redo_FA_well_2']
@@ -271,12 +275,12 @@ def processFAfiles(my_fa_files):
             # add destination plates in fa file to list fa_dest_plates
             dest_plates = fa_dict[f]['Redo_FA_Destination_plate'].unique().tolist()
             fa_dest_plates.extend(dest_plates)
-            print(f"  Destination plates: {dest_plates}")
+            # print(f"  Destination plates: {dest_plates}")
         
             # get rid of unnecessary columns
             fa_dict[f].drop(['Redo_FA_Destination_plate','Redo_FA_well_2','Redo_FA_Sample_ID','Redo_FA_Well'], inplace=True, axis=1)
             
-            print(f"  ✓ Successfully processed {f}")
+            # print(f"  ✓ Successfully processed {f}")
             
         except Exception as e:
             print(f"ERROR processing {f}: {e}")
@@ -293,14 +297,14 @@ def processFAfiles(my_fa_files):
         print(f"Destination plates: {set(fa_dest_plates)}")
         sys.exit()
 
-    # print out list of successfully processed FA files
-    print("\n\n\nList of processed FA output files:\n\n\n")
+    # # print out list of successfully processed FA files
+    # print("\n\n\nList of processed FA output files:\n\n\n")
 
-    for k in fa_dict.keys():
-        print(f'{k}\n')
+    # for k in fa_dict.keys():
+    #     print(f'{k}\n')
 
-    # add some blank lines after displaying list of processed FA files
-    print('\n\n\n')
+    # # add some blank lines after displaying list of processed FA files
+    # print('\n\n\n')
 
     return fa_dict, list(set(fa_dest_plates))
 ##########################
@@ -335,7 +339,7 @@ def readSQLdb():
     try:
         # import sql db into pandas df
         sql_df = pd.read_sql(query, engine)
-        print(f"  Read {len(sql_df)} rows from database")
+        # print(f"  Read {len(sql_df)} rows from database")
         
         engine.dispose()
         return sql_df
@@ -365,7 +369,7 @@ def addFAresults(my_prjct_dir, my_fa_df):
     Raises:
         SystemExit: If merge operation fails or changes row count
     """
-    print("Merging FA results with project summary...")
+    print("\nMerging FA results with project summary...")
     
     # create df from sqlite db
     my_lib_df = readSQLdb()
@@ -375,13 +379,13 @@ def addFAresults(my_prjct_dir, my_fa_df):
 
     # record number of rows in my_lib_df. want to make sure doesn't change when merged with fa_df
     num_rows = my_lib_df.shape[0]
-    print(f"  Project summary has {num_rows} rows")
-    print(f"  FA data has {len(my_fa_df)} rows")
+    # print(f"  Project summary has {num_rows} rows")
+    # print(f"  FA data has {len(my_fa_df)} rows")
 
     # merge lib df with fa_df
     my_lib_df = my_lib_df.merge(my_fa_df, how='left', left_on=['sample_id'], right_on=['Redo_FA_Sample'])
     
-    print(f"  After merge: {len(my_lib_df)} rows")
+    # print(f"  After merge: {len(my_lib_df)} rows")
     
     # confirm that merging did not change the row number
     if my_lib_df.shape[0] != num_rows:
@@ -397,7 +401,7 @@ def addFAresults(my_prjct_dir, my_fa_df):
     
     # Count how many samples got FA data
     fa_samples = my_lib_df['Redo_ng/uL'].notna().sum()
-    print(f"  Successfully merged FA data for {fa_samples} samples")
+    # print(f"  Successfully merged FA data for {fa_samples} samples")
 
     return my_lib_df
 ##########################
@@ -420,7 +424,7 @@ def findPassFailLibs(my_lib_df, my_dest_plates):
     Raises:
         SystemExit: If thresholds file is missing values or dilution factor issues
     """
-    print("Applying quality thresholds...")
+    print("\nApplying quality thresholds...")
     
     # import df with dna conc and size thresholds for each FA plate
     thresh_file = SECOND_DIR / "thresholds.txt"
@@ -429,7 +433,7 @@ def findPassFailLibs(my_lib_df, my_dest_plates):
         sys.exit()
         
     thresh_df = pd.read_csv(thresh_file, sep="\t", header=0)
-    print(f"  Read thresholds for {len(thresh_df)} plates")
+    # print(f"  Read thresholds for {len(thresh_df)} plates")
     
     # make sure threshold file has values for all threshold parameters
     if thresh_df.isnull().values.any():
@@ -492,27 +496,63 @@ def findPassFailLibs(my_lib_df, my_dest_plates):
     
     redux_df = my_lib_df[redux_mask]
     
-    print(f"  Samples in rework plates: {len(redux_df)}")
+    # print(f"  Samples in rework plates: {len(redux_df)}")
 
     # make a summary file containing only libs that failed both attempts
     my_double_fail_df = redux_df.loc[redux_df['Total_passed_attempts'] == 0].copy()
     
-    print(f"  Samples that failed both attempts: {len(my_double_fail_df)}")
+    # print(f"  Samples that failed both attempts: {len(my_double_fail_df)}")
 
     return my_lib_df, my_double_fail_df
 ##########################
 ##########################
+
+def archive_fa_results(fa_result_dirs, archive_subdir_name):
+    """Archive FA result directories to permanent storage"""
+    if not fa_result_dirs:
+        return
+    
+    # Create archive directory
+    archive_base = PROJECT_DIR / "archived_files"
+    archive_dir = archive_base / archive_subdir_name
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    
+    for result_dir in fa_result_dirs:
+        if result_dir.exists():
+            dest_path = archive_dir / result_dir.name
+            
+            # Handle existing archives (prevent nesting)
+            if dest_path.exists():
+                shutil.rmtree(dest_path)
+                # print(f"Removing existing archive: {result_dir.name}")
+            
+            # Move directory to archive
+            shutil.move(str(result_dir), str(dest_path))
+            print(f"Archived: {result_dir.name}")
+            
+            # Clean up empty parent directories
+            parent_dir = result_dir.parent
+            if parent_dir.exists():
+                # Check if directory is empty (ignoring .DS_Store files)
+                remaining_files = [f for f in parent_dir.iterdir() if f.name != '.DS_Store']
+                if not remaining_files:
+                    # Remove any .DS_Store files first
+                    for ds_store in parent_dir.glob('.DS_Store'):
+                        ds_store.unlink()
+                    # Now remove the empty directory
+                    parent_dir.rmdir()
+                    # print(f"Cleaned up empty directory: {parent_dir.name}")
 
 def main():
     """
     Main function to orchestrate the second attempt FA analysis workflow.
     """
     print("Starting SPS Second FA Output Analysis...")
-    print(f"Working directory: {PROJECT_DIR}")
-    print(f"Second attempt directory: {SECOND_DIR}")
+    # print(f"Working directory: {PROJECT_DIR}")
+    # print(f"Second attempt directory: {SECOND_DIR}")
     
-    # get list of FA output files
-    fa_files = getFAfiles(SECOND_DIR)
+    # MODIFIED: Update function call to receive both returns
+    fa_files, fa_result_dirs_to_archive = getFAfiles(SECOND_DIR)
 
     # get dictionary where keys are FA file names and values are df's created from FA files
     # and get a list of destination/lib plate IDs processed
@@ -520,7 +560,7 @@ def main():
 
     # create new dataframe combining all entries in dictionary fa_lib_dict
     fa_df = pd.concat(fa_lib_dict.values(), ignore_index=True)
-    print(f"Combined FA data: {len(fa_df)} samples")
+    # print(f"Combined FA data: {len(fa_df)} samples")
 
     # add FA results to df from project summary database
     lib_df = addFAresults(PROJECT_DIR, fa_df)
@@ -545,6 +585,10 @@ def main():
     double_fail_df.to_csv(double_fail_output, sep='\t', index=False)
     
     print(f"\nAnalysis complete.")
+    
+    # NEW: Archive FA results before creating success marker
+    if fa_result_dirs_to_archive:
+        archive_fa_results(fa_result_dirs_to_archive, "second_lib_attempt_fa_results")
     
     # Create success marker for workflow manager integration
     create_success_marker()

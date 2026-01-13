@@ -354,8 +354,8 @@ def generateSmearFile(final_df):
     # if smear_df['QC Result'] >=1, set to 'Pass', else 'Fail'
     smear_df['QC Result'] = smear_df['QC Result'].apply(lambda x: 'Pass' if x >= 1 else 'Fail') 
 
-    # if smear_df['QC Result'] == 'Fail', set 'Failure Mode' to 'Low Concentration', else ''
-    smear_df['Failure Mode'] = smear_df['QC Result'].apply(lambda x: 'Low Concentration' if x == 'Fail' else '')
+    # if smear_df['QC Result'] == 'Fail', set 'Failure Mode' to 'Sample Problem', else ''
+    smear_df['Failure Mode'] = smear_df['QC Result'].apply(lambda x: 'Sample Problem' if x == 'Fail' else '')
 
     # reorder columns
     smear_df = smear_df[['Well', 'Sample ID', 'Range', 'ng/uL', '%Total', 'nmole/L', 'Avg. Size', 

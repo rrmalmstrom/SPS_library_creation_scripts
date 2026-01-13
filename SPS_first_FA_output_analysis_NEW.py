@@ -96,12 +96,13 @@ def getFAfiles(first_dir):
         first_dir: Path to the first attempt FA result directory
         
     Returns:
-        List of FA file names that were processed
+        Tuple of (List of FA file names that were processed, List of FA result directories for archiving)
         
     Raises:
         SystemExit: If no FA files are found
     """
     fa_files = []
+    fa_result_dirs_to_archive = []  # NEW: Track directories for archiving
     
     for direct in first_dir.iterdir():
         if direct.is_dir():
@@ -130,6 +131,9 @@ def getFAfiles(first_dir):
                             
                             # add folder name (aka FA plate name) to list
                             fa_files.append(f'{folder_name}.csv')
+                            
+                            # NEW: Track this directory for archiving
+                            fa_result_dirs_to_archive.append(fa)
     
     
 
@@ -138,8 +142,8 @@ def getFAfiles(first_dir):
         print("\n\nDid not find any FA output files. Aborting program\n\n")
         sys.exit()
     
-    # return a list of FA plate names
-    return fa_files
+    # return both lists
+    return fa_files, fa_result_dirs_to_archive
 ##########################
 ##########################
 
@@ -384,14 +388,50 @@ def findPassFailLibs(my_lib_df, my_dest_plates):
 ##########################
 ##########################
 
+def archive_fa_results(fa_result_dirs, archive_subdir_name):
+    """Archive FA result directories to permanent storage"""
+    if not fa_result_dirs:
+        return
+    
+    # Create archive directory
+    archive_base = PROJECT_DIR / "archived_files"
+    archive_dir = archive_base / archive_subdir_name
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    
+    for result_dir in fa_result_dirs:
+        if result_dir.exists():
+            dest_path = archive_dir / result_dir.name
+            
+            # Handle existing archives (prevent nesting)
+            if dest_path.exists():
+                shutil.rmtree(dest_path)
+                # print(f"Removing existing archive: {result_dir.name}")
+            
+            # Move directory to archive
+            shutil.move(str(result_dir), str(dest_path))
+            print(f"Archived: {result_dir.name}")
+            
+            # Clean up empty parent directories
+            parent_dir = result_dir.parent
+            if parent_dir.exists():
+                # Check if directory is empty (ignoring .DS_Store files)
+                remaining_files = [f for f in parent_dir.iterdir() if f.name != '.DS_Store']
+                if not remaining_files:
+                    # Remove any .DS_Store files first
+                    for ds_store in parent_dir.glob('.DS_Store'):
+                        ds_store.unlink()
+                    # Now remove the empty directory
+                    parent_dir.rmdir()
+                    # print(f"Cleaned up empty directory: {parent_dir.name}")
+
 def main():
     """
     Main function to orchestrate the FA analysis workflow.
     """
     print("Starting SPS First FA Output Analysis...")
     
-    # get list of FA output files
-    fa_files = getFAfiles(FIRST_DIR)
+    # MODIFIED: Update function call to receive both returns
+    fa_files, fa_result_dirs_to_archive = getFAfiles(FIRST_DIR)
 
     # get dictionary where keys are FA file names and values are df's created from FA files
     # and get a list of destination/lib plate IDs processed
@@ -416,7 +456,11 @@ def main():
     output_file = FIRST_DIR / 'reduced_fa_analysis_summary.txt'
     reduced_fa_df.to_csv(output_file, sep='\t', index=False)
     
-    print(f"\nAnalysis complete. Results saved to: \n{output_file}")
+    print(f"\nAnalysis complete\n")
+    
+    # NEW: Archive FA results before creating success marker
+    if fa_result_dirs_to_archive:
+        archive_fa_results(fa_result_dirs_to_archive, "first_lib_attempt_fa_results")
     
     # Create success marker for workflow manager integration
     create_success_marker()
