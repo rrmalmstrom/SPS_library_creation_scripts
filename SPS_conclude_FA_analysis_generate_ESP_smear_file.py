@@ -6,7 +6,6 @@
 import sys
 from pathlib import Path
 from datetime import datetime
-import os
 from sqlalchemy import create_engine
 import pandas as pd
 import numpy as np
@@ -326,17 +325,17 @@ def selectPlateForPooling(lib_df):
 
 ##########################
 ##########################
-def generateSmearFile(final_df):  
-    # ESP smear file columns: Well, Sample ID, Range, ng/uL, %Total, nmole/L, Avg. Size, 
+def generateSmearFile(final_df):
+    # ESP smear file columns: Well, Sample ID, Range, ng/uL, %Total, nmole/L, Avg. Size,
     # %CV, Volume uL, QC Result, Failure Mode, Index Name, PCR Cycles
 
-    # create smear_df with relevant columns from final_df
-    smear_df = final_df[['Destination_Well','sample_id','Pool_DNA_conc_ng/uL','Pool_nmole/L','Pool_Avg. Size','Pool_Illumina_index','Total_passed_attempts']].copy()
+    # create smear_df with relevant columns from final_df, including Destination_Plate_Barcode for grouping
+    smear_df = final_df[['Destination_Well','Illumina Library','Pool_DNA_conc_ng/uL','Pool_nmole/L','Pool_Avg. Size','Pool_Illumina_index','Total_passed_attempts','Destination_Plate_Barcode']].copy()
     
-    # rename columns to match ESP smear file format
-    smear_df.rename(columns={   
+    # rename columns to match ESP smear file format (except Destination_Plate_Barcode which we'll use for grouping)
+    smear_df.rename(columns={
         'Destination_Well': 'Well',
-        'sample_id': 'Sample ID',
+        'Illumina Library': 'Sample ID',
         'Pool_DNA_conc_ng/uL': 'ng/uL',
         'Pool_nmole/L': 'nmole/L',
         'Pool_Avg. Size': 'Avg. Size',
@@ -345,25 +344,42 @@ def generateSmearFile(final_df):
     }, inplace=True)
 
     # add constant columns with default values
-    smear_df['Range'] = '350 bp to 800 bp'
+    smear_df['Range'] = '400 bp to 800 bp'
     smear_df['%Total'] = 15
     smear_df['%CV'] = 20
     smear_df['Volume uL'] = 20
     smear_df['PCR Cycles'] = 12
 
     # if smear_df['QC Result'] >=1, set to 'Pass', else 'Fail'
-    smear_df['QC Result'] = smear_df['QC Result'].apply(lambda x: 'Pass' if x >= 1 else 'Fail') 
+    smear_df['QC Result'] = smear_df['QC Result'].apply(lambda x: 'Pass' if x >= 1 else 'Fail')
 
     # if smear_df['QC Result'] == 'Fail', set 'Failure Mode' to 'Sample Problem', else ''
     smear_df['Failure Mode'] = smear_df['QC Result'].apply(lambda x: 'Sample Problem' if x == 'Fail' else '')
 
-    # reorder columns
-    smear_df = smear_df[['Well', 'Sample ID', 'Range', 'ng/uL', '%Total', 'nmole/L', 'Avg. Size', 
-                         '%CV', 'Volume uL', 'QC Result', 'Failure Mode', 'Index Name', 'PCR Cycles']]  
-
-    # export smear_df to tab delimited file
-    smear_file_path = SMEAR_DIR / 'ESP_smear_file_for_upload.txt'
-    smear_df.to_csv(smear_file_path, sep='\t', index=False)
+    # Get unique destination plate barcodes
+    unique_plates = smear_df['Destination_Plate_Barcode'].unique()
+    
+    print(f"Found {len(unique_plates)} unique destination plate barcodes: {list(unique_plates)}")
+    
+    # Create separate files for each unique destination plate barcode
+    for plate_barcode in unique_plates:
+        # Filter data for current plate barcode
+        plate_df = smear_df[smear_df['Destination_Plate_Barcode'] == plate_barcode].copy()
+        
+        # Remove the Destination_Plate_Barcode column from the export (as requested)
+        plate_df = plate_df.drop('Destination_Plate_Barcode', axis=1)
+        
+        # Reorder columns for final export
+        plate_df = plate_df[['Well', 'Sample ID', 'Range', 'ng/uL', '%Total', 'nmole/L', 'Avg. Size',
+                             '%CV', 'Volume uL', 'QC Result', 'Failure Mode', 'Index Name', 'PCR Cycles']]
+        
+        # Create filename with plate barcode included
+        smear_file_path = SMEAR_DIR / f'ESP_smear_file_for_upload_{plate_barcode}.txt'
+        
+        # Export plate-specific data to tab delimited file
+        plate_df.to_csv(smear_file_path, sep='\t', index=False)
+        
+        print(f"✓ Created ESP smear file: {smear_file_path} ({len(plate_df)} rows)")
 
     return
 ##########################
