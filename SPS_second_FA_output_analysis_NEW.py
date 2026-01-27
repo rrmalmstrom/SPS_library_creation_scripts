@@ -508,7 +508,7 @@ def findPassFailLibs(my_lib_df, my_dest_plates):
 ##########################
 
 def archive_fa_results(fa_result_dirs, archive_subdir_name):
-    """Archive FA result directories to permanent storage"""
+    """Archive FA result directories to permanent storage by copying them"""
     if not fa_result_dirs:
         return
     
@@ -526,22 +526,9 @@ def archive_fa_results(fa_result_dirs, archive_subdir_name):
                 shutil.rmtree(dest_path)
                 # print(f"Removing existing archive: {result_dir.name}")
             
-            # Move directory to archive
-            shutil.move(str(result_dir), str(dest_path))
-            print(f"Archived: {result_dir.name}")
-            
-            # Clean up empty parent directories
-            parent_dir = result_dir.parent
-            if parent_dir.exists():
-                # Check if directory is empty (ignoring .DS_Store files)
-                remaining_files = [f for f in parent_dir.iterdir() if f.name != '.DS_Store']
-                if not remaining_files:
-                    # Remove any .DS_Store files first
-                    for ds_store in parent_dir.glob('.DS_Store'):
-                        ds_store.unlink()
-                    # Now remove the empty directory
-                    parent_dir.rmdir()
-                    # print(f"Cleaned up empty directory: {parent_dir.name}")
+            # Copy directory to archive (preserves original)
+            shutil.copytree(str(result_dir), str(dest_path))
+            print(f"Archived (copied): {result_dir.name}")
 
 def main():
     """
