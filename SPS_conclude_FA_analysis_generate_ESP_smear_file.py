@@ -374,10 +374,10 @@ def generateSmearFile(final_df):
                              '%CV', 'Volume uL', 'QC Result', 'Failure Mode', 'Index Name', 'PCR Cycles']]
         
         # Create filename with plate barcode included
-        smear_file_path = SMEAR_DIR / f'ESP_smear_file_for_upload_{plate_barcode}.txt'
+        smear_file_path = SMEAR_DIR / f'ESP_smear_file_for_upload_{plate_barcode}.csv'
         
         # Export plate-specific data to tab delimited file
-        plate_df.to_csv(smear_file_path, sep='\t', index=False)
+        plate_df.to_csv(smear_file_path, index=False)
         
         print(f"✓ Created ESP smear file: {smear_file_path} ({len(plate_df)} rows)")
 
