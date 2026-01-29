@@ -368,13 +368,27 @@ def addSPITScolumns(df):
 ##########################
 def makeSPITSformat(df):
     
-    # Updated SPITS format: remove empty columns, replace echo_id with Dest_plate, replace Well with Dest_well_384
-    # Include new metadata columns immediately before Pool and Internal_name
+    # Updated SPITS format: remove Pool column, add empty columns as requested
+    # Include new metadata columns and empty columns in specified positions
     df2 = df[['Sample_name','DNA_conc','Sample_vol','Dest_plate','Sample_container','Dest_well_384','Sample_format',
               'DNAse_treated','Biosafety_cat','Isolation_method',
               'Collection_Year','Collection_Month','Collection_Day','Sample_Isolated_From','Collection_Site',
               'Latitude','Longitude','Depth','Maximum_depth','Elevation','Maximum_elevation','Country',
-              'Type','Pool','Internal_name']]
+              'Type','Internal_name']].copy()
+    
+    # Add empty column between DNAse_treated and Biosafety_cat
+    df2.insert(df2.columns.get_loc('Biosafety_cat'), 'Empty_1', '')
+    
+    # Add three empty columns between Country and Type
+    type_index = df2.columns.get_loc('Type')
+    df2.insert(type_index, 'Empty_2', '')
+    df2.insert(type_index, 'Empty_3', '')
+    df2.insert(type_index, 'Empty_4', '')
+    
+    # Add two empty columns between Type and Internal_name
+    internal_name_index = df2.columns.get_loc('Internal_name')
+    df2.insert(internal_name_index, 'Empty_5', '')
+    df2.insert(internal_name_index, 'Empty_6', '')
 
     # create csv summarizing single cell results
     df2.to_csv('output.csv', index=False)
