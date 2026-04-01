@@ -64,20 +64,28 @@ project_root/
 ### 1. Sample Metadata CSV (`sample_metadtata.csv`) — First Run Only
 Place in the working directory before running. Required columns:
 
-| Column | Description |
-|--------|-------------|
-| `Proposal` | Proposal identifier |
-| `Project` | Project code (e.g., `BP9735`) |
-| `Sample` | Sample name (e.g., `SitukAM`) |
-| `Number_of_sorted_plates` | Integer count of sort plates for this sample |
+| Column | Description | Validation |
+|--------|-------------|------------|
+| `Proposal` | Proposal identifier (e.g., `509735`) | Must be < 9 characters |
+| `Group_or_abrvSample` | Short group or sample abbreviation (e.g., `WCBP1PR`) | Must be < 9 characters; letters and numbers only (no symbols or spaces) |
+| `Sample_full` | Full sample name (e.g., `W-PM-166`) | No restrictions |
+| `Number_of_sorted_plates` | Integer count of sort plates for this sample | Must be a valid integer |
 
 Additional columns (optional but expected):
 `Collection Year`, `Collection Month`, `Collection Day`, `Sample Isolated From`, `Latitude`, `Longitude`, `Depth (m)`, `Elevation (m)`, `Country`
 
+> **Note:** The `Project` column has been removed. `Proposal` now serves as the project-level identifier and is used as the prefix in plate names (e.g., `509735_WCBP1PR.1`).
+
+Example CSV row:
+```
+Proposal,Group_or_abrvSample,Sample_full,Collection Year,...,Number_of_sorted_plates
+509735,WCBP1PR,W-PM-166,2023,...,2
+```
+
 ### 2. Custom Plate Names (`custom_plate_names.txt`) — Optional, Any Run
 One plate name per line. Each name must be **< 20 characters**.
 
-**First run**: place in working directory.  
+**First run**: place in working directory.
 **Subsequent runs**: place in `1_make_barcode_labels/`.
 
 ```
@@ -87,16 +95,16 @@ Custom_Plate_Name
 ```
 
 ### 3. Additional Standard Plates (`additional_standard_plates.txt`) — Optional, Subsequent Runs Only
-One entry per line in `PROJECT_SAMPLE:COUNT` format.
+One entry per line in `PROPOSAL_GROUP:COUNT` format.
 
 **Subsequent runs only**: place in `1_make_barcode_labels/`.
 
 ```
-BP9735_SitukAM:2
-BP9735_WCBP1PR:1
+509735_SitukAM:2
+509735_WCBP1PR:1
 ```
 
-This adds 2 more plates to `BP9735_SitukAM` and 1 more to `BP9735_WCBP1PR`, continuing plate numbering from where the previous run left off.
+This adds 2 more plates to `509735_SitukAM` and 1 more to `509735_WCBP1PR`, continuing plate numbering from where the previous run left off. The key must match the `Proposal` and `Group_or_abrvSample` values from the original metadata CSV.
 
 ---
 
@@ -170,11 +178,12 @@ A timestamped copy is archived to `archived_files/` before each update.
 ### First Run Flow
 1. Create full project folder structure (11 directories)
 2. Auto-detect and read `sample_metadtata.csv`
-3. Generate standard plate names (`PROJECT_SAMPLE.N`)
-4. Optionally add custom plates from `custom_plate_names.txt`
-5. Generate incremental barcodes (random or custom base)
-6. Validate barcode uniqueness
-7. Save to database, generate BarTender file, organize files, export CSVs
+3. Validate CSV columns and data (`Proposal` < 9 chars, `Group_or_abrvSample` < 9 chars and alphanumeric only)
+4. Generate standard plate names (`PROPOSAL_GROUP.N`, e.g., `509735_WCBP1PR.1`)
+5. Optionally add custom plates from `custom_plate_names.txt`
+6. Generate incremental barcodes (random or custom base)
+7. Validate barcode uniqueness
+8. Save to database, generate BarTender file, organize files, export CSVs
 
 ### Subsequent Run Flow
 1. Ensure folder structure exists (no-op if already present)
@@ -194,6 +203,9 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 | Condition | Behavior |
 |-----------|----------|
 | Missing required CSV columns | FATAL ERROR + list of missing columns |
+| `Proposal` value ≥ 9 characters | FATAL ERROR + list of invalid values |
+| `Group_or_abrvSample` value ≥ 9 characters | FATAL ERROR + list of invalid values |
+| `Group_or_abrvSample` contains non-alphanumeric characters | FATAL ERROR + list of invalid values |
 | Invalid `Number_of_sorted_plates` values | FATAL ERROR |
 | No valid CSV found in working directory | FATAL ERROR |
 | Multiple valid CSVs found | FATAL ERROR (ambiguous input) |
@@ -230,10 +242,17 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 
 ## Version History
 
-### Current Version (SPS — March 2026)
+### Current Version (SPS — April 2026)
+- **New CSV format**: Replaced `Project` and `Sample` columns with `Group_or_abrvSample` and `Sample_full`
+- **`Project` column removed**: `Proposal` now serves as the project-level prefix in plate names (e.g., `509735_WCBP1PR.1`)
+- **New validations**: `Proposal` must be < 9 characters; `Group_or_abrvSample` must be < 9 characters and contain only letters and numbers
+- **`additional_standard_plates.txt` format updated**: Keys now use `PROPOSAL_GROUP` format (e.g., `509735_WCBP1PR:2`) instead of `PROJECT_SAMPLE`
+
+### Previous Version (SPS — March 2026)
 - Renamed and adapted from `initiate_project_folder_and_make_sort_plate_labels.py` (capsule_sort_scripts)
 - **Updated folder structure**: `2_sort_plates_and_amplify_genomes/` (with `A_sort_plate_layouts/` and `B_WGA_results/` subfolders), `3_make_library_analyze_fa/`, `4_pooling/` replacing the old `2_library_creation/`, `3_FA_analysis/`, `4_plate_selection_and_pooling/`
 - **Updated `folders` dict keys**: `sort_plates_and_amplify`, `make_library_analyze_fa`, `pooling`, `sort_plate_layouts`, `wga_results`
+- CSV format used `Proposal`, `Project`, `Sample` columns; plate names were `PROJECT_SAMPLE.N`
 
 ### Previous Version (capsule_sort_scripts)
 - Used `2_library_creation/`, `3_FA_analysis/`, `4_plate_selection_and_pooling/` folder names
@@ -241,6 +260,6 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 
 ---
 
-**Author**: SPS Lab  
-**Last Updated**: March 2026  
+**Author**: SPS Lab
+**Last Updated**: April 2026
 **Conda Environment**: `sip-lims`

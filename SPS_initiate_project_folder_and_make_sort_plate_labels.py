@@ -131,7 +131,7 @@ def read_sample_csv(csv_path):
         df = pd.read_csv(csv_path, encoding='utf-8-sig')
         
         # Validate required columns
-        required_cols = ['Proposal', 'Project', 'Sample', 'Number_of_sorted_plates']
+        required_cols = ['Proposal', 'Group_or_abrvSample', 'Sample_full', 'Number_of_sorted_plates']
         missing = [col for col in required_cols if col not in df.columns]
         
         if missing:
@@ -147,6 +147,30 @@ def read_sample_csv(csv_path):
         except ValueError as e:
             print(f"FATAL ERROR: Invalid data in 'Number_of_sorted_plates' column: {e}")
             print("All values must be integers for laboratory automation safety.")
+            sys.exit()
+        
+        # Validate Proposal values are < 9 characters
+        invalid_proposals = df[df['Proposal'].astype(str).str.len() >= 9]['Proposal'].tolist()
+        if invalid_proposals:
+            print(f"FATAL ERROR: 'Proposal' values must be less than 9 characters.")
+            print(f"Invalid values: {invalid_proposals}")
+            print("Laboratory automation requires valid proposal identifiers for safety.")
+            sys.exit()
+        
+        # Validate Group_or_abrvSample values are < 9 characters
+        invalid_groups_len = df[df['Group_or_abrvSample'].astype(str).str.len() >= 9]['Group_or_abrvSample'].tolist()
+        if invalid_groups_len:
+            print(f"FATAL ERROR: 'Group_or_abrvSample' values must be less than 9 characters.")
+            print(f"Invalid values: {invalid_groups_len}")
+            print("Laboratory automation requires valid group/sample abbreviations for safety.")
+            sys.exit()
+        
+        # Validate Group_or_abrvSample values contain only letters and numbers (no symbols or spaces)
+        invalid_groups_chars = df[~df['Group_or_abrvSample'].astype(str).str.match(r'^[A-Za-z0-9]+$')]['Group_or_abrvSample'].tolist()
+        if invalid_groups_chars:
+            print(f"FATAL ERROR: 'Group_or_abrvSample' values must contain only letters and numbers (no symbols or spaces).")
+            print(f"Invalid values: {invalid_groups_chars}")
+            print("Laboratory automation requires alphanumeric-only group identifiers for safety.")
             sys.exit()
         
         print(f"✅ Read {len(df)} samples from CSV file")
@@ -175,15 +199,15 @@ def make_plate_names(sample_df):
     plates = []
     
     for _, row in sample_df.iterrows():
-        project = row['Project']
-        sample = row['Sample']
+        proposal = row['Proposal']
+        sample = row['Group_or_abrvSample']
         num_plates = int(row['Number_of_sorted_plates'])
         
-        # Generate plate names for each sample
+        # Generate plate names using Proposal and Group_or_abrvSample as the short identifier
         for i in range(1, num_plates + 1):
             plates.append({
-                'plate_name': f"{project}_{sample}.{i}",
-                'project': project,
+                'plate_name': f"{proposal}_{sample}.{i}",
+                'project': proposal,
                 'sample': sample,
                 'plate_number': i,
                 'is_custom': False
@@ -492,9 +516,9 @@ def make_bartender_file(df, output_path):
                 # Standard label (barcode with quoted plate name as label
                 f.write(f'{plate_name},"{plate_name}"\r\n')
                 
-                # Add blank separator line between plate sets (except after last plate)
-                if i < len(df_sorted) - 1:
-                    f.write(',\r\n')
+                # # Add blank separator line between plate sets (except after last plate)
+                # if i < len(df_sorted) - 1:
+                #     f.write(',\r\n')
             
             # Add proper trailing empty lines for BarTender compatibility
             f.write('\r\n')
@@ -519,13 +543,13 @@ def detect_sample_metadata_csv():
     """
     # Complete list of expected headers from sample_metadtata.csv format
     expected_headers = [
-        'Proposal', 'Project', 'Sample', 'Collection Year', 'Collection Month',
-        'Collection Day', 'Sample Isolated From', 'Latitude', 'Longitude',
+        'Proposal', 'Group_or_abrvSample', 'Sample_full', 'Collection Year',
+        'Collection Month', 'Collection Day', 'Sample Isolated From', 'Latitude', 'Longitude',
         'Depth (m)', 'Elevation (m)', 'Country', 'Number_of_sorted_plates'
     ]
     
     # Required subset for processing
-    required_headers = ['Proposal', 'Project', 'Sample', 'Number_of_sorted_plates']
+    required_headers = ['Proposal', 'Group_or_abrvSample', 'Sample_full', 'Number_of_sorted_plates']
     
     # Look for sample_metadtata.csv specifically first
     sample_metadata_file = Path('sample_metadtata.csv')
@@ -1239,26 +1263,26 @@ def process_additional_standard_plates(existing_sample_df, additional_plates, ex
     for sample_id, count in additional_plates.items():
         print(f"  - {sample_id}: {count} additional plates")
         
-        # Parse PROJECT_SAMPLE format (e.g., "BP9735_WCBP1PR" -> project="BP9735", sample="WCBP1PR")
+        # Parse PROPOSAL_GROUP format (e.g., "509735_WCBP1PR" -> proposal="509735", sample="WCBP1PR")
         if '_' not in sample_id:
-            print(f"⚠️  WARNING: Invalid format for {sample_id}. Expected PROJECT_SAMPLE format (e.g., 'BP9735_WCBP1PR')")
+            print(f"⚠️  WARNING: Invalid format for {sample_id}. Expected PROPOSAL_GROUP format (e.g., '509735_WCBP1PR')")
             continue
             
-        project, sample = sample_id.split('_', 1)
+        proposal, sample = sample_id.split('_', 1)
         
-        # Find the sample with matching project and sample combination
+        # Find the sample with matching Proposal and Group_or_abrvSample combination
         sample_row = existing_sample_df[
-            (existing_sample_df['Project'] == project) &
-            (existing_sample_df['Sample'] == sample)
+            (existing_sample_df['Proposal'].astype(str) == str(proposal)) &
+            (existing_sample_df['Group_or_abrvSample'] == sample)
         ]
         
         if sample_row.empty:
-            print(f"⚠️  WARNING: Project-Sample combination '{project}' + '{sample}' not found in existing metadata")
+            print(f"⚠️  WARNING: Proposal-Group combination '{proposal}' + '{sample}' not found in existing metadata")
             continue
         
-        # DEBUG: Find existing plates for this project-sample combination
+        # Find existing plates for this proposal-sample combination
         existing_sample_plates = existing_plates_df[
-            (existing_plates_df['project'] == project) &
+            (existing_plates_df['project'].astype(str) == str(proposal)) &
             (existing_plates_df['sample'] == sample) &
             (existing_plates_df['is_custom'] == False)
         ]
@@ -1272,11 +1296,11 @@ def process_additional_standard_plates(existing_sample_df, additional_plates, ex
         # Create additional plates for this sample, continuing from the highest existing number
         for i in range(count):
             next_plate_number = max_plate_number + i + 1
-            plate_name = f"{project}_{sample}.{next_plate_number}"
+            plate_name = f"{proposal}_{sample}.{next_plate_number}"
             
             additional_plates_list.append({
                 'plate_name': plate_name,
-                'project': project,
+                'project': proposal,
                 'sample': sample,
                 'plate_number': next_plate_number,
                 'is_custom': False
