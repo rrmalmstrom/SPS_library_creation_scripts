@@ -44,8 +44,6 @@ File Organization:
 Barcode System:
 - Single base barcode per project (5-character alphanumeric)
 - Incremental numbering: BASE-1, BASE-2, BASE-3, etc.
-- Echo variants: eBASE-1, eBASE-2 (lowercase 'e' prefix)
-- Hamilton variants: hBASE-1, hBASE-2 (lowercase 'h' prefix)
 - No collision avoidance needed - simple sequential numbering
 
 Safety Features:
@@ -468,8 +466,6 @@ def read_from_database(db_path):
 def make_bartender_file(df, output_path):
     """
     Generate BarTender label file with simplified barcode system.
-    Creates echo/hamilton variants at print time with lowercase prefixes.
-    Format: Reverse order (highest to lowest), interleaved echo/hamilton pairs with separators.
     
     Args:
         df (pd.DataFrame): DataFrame with barcode data (must have 'barcode' and 'plate_name' columns)
@@ -489,7 +485,7 @@ def make_bartender_file(df, output_path):
             df_sorted['barcode_num'] = df_sorted['barcode'].str.split('-').str[1].astype(int)
             df_sorted = df_sorted.sort_values('barcode_num', ascending=False)
             
-            # Interleaved echo/hamilton pairs in reverse order with separators
+            # Sort plate labels in reverse order with separators
             for i, (_, row) in enumerate(df_sorted.iterrows()):
                 plate_name = row['plate_name']
 
