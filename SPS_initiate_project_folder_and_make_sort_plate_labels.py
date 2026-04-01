@@ -491,16 +491,10 @@ def make_bartender_file(df, output_path):
             
             # Interleaved echo/hamilton pairs in reverse order with separators
             for i, (_, row) in enumerate(df_sorted.iterrows()):
-                barcode = row['barcode']
                 plate_name = row['plate_name']
-                
-                # Echo label (with plate name, no "Echo" word)
-                echo_barcode = f"e{barcode}"
-                f.write(f'{echo_barcode},"{plate_name}"\r\n')
-                
-                # Hamilton label (barcode with quoted barcode as label)
-                hamilton_barcode = f"h{barcode}"
-                f.write(f'{hamilton_barcode},"{hamilton_barcode}"\r\n')
+
+                # Standard label (barcode with quoted plate name as label
+                f.write(f'{plate_name},"{plate_name}"\r\n')
                 
                 # Add blank separator line between plate sets (except after last plate)
                 if i < len(df_sorted) - 1:
