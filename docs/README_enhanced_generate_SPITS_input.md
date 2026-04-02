@@ -59,7 +59,7 @@ Required columns (header on line 2):
 ## Output Files
 
 ### 1. output.csv (SPITS Format)
-Main output file with 25 columns including:
+Main output file with 30 columns including:
 - Sample information and metadata
 - Illumina index assignments
 - Plate and well positions
@@ -70,15 +70,15 @@ Database-compatible summary with 9 columns:
 - `internal_name`: Plate_id + Well
 - `plate_id`: Source plate identifier
 - `echo_id`: Echo barcode
-- `well`: Well position
+- `source_well`: Well position
 - `type`: Sample type
 - `dest_plate`: Destination plate
 - `dest_well_384`: 384-well format position
-- `illumina_index_set`: Index set (PE17-PE20)
-- `illumina_index`: Individual index (e.g., PE17_E01)
+- `Illumina_index_set`: Index set (PE17-PE20)
+- `Illumina_index`: Individual index (e.g., PE17_E01)
 
 ### 3. project_summary.db
-SQLite database containing the same data as project_summary.csv in a `project_summary` table.
+SQLite database containing the same data as project_summary.csv in a `project_summary` table, with two columns renamed: `dest_plate` → `Destination_plate_name` and `dest_well_384` → `Destination_Well`.
 
 ## Constants and Configuration
 
@@ -114,7 +114,7 @@ All error messages follow a consistent format:
 - `Sample_name`: Auto-generated based on sample type
 - `DNA_conc`: Default value (10)
 - `Sample_vol`: Default value (25)
-- `Sample_container`: 'plate'
+- `Sample_container`: '384'
 - `Sample_format`: 'MDA reaction buffer'
 - `DNAse_treated`: 'N'
 - `Biosafety_cat`: 'Metagenome (Environmental)'
