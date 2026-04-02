@@ -19,7 +19,7 @@ The script supports both **first runs** (new projects) and **subsequent runs** (
 - **BarTender file generation**: Reverse-ordered with BarTender header and footer
 - **Two-table SQLite database**: `sample_metadata` and `individual_plates` tables in `project_summary.db`
 - **Timestamped file archiving**: Prevents overwrites on subsequent runs
-- **Custom plates support**: File-based input via `custom_plate_names.txt`
+- **Custom plates support**: ~~File-based input via `custom_plate_names.txt`~~ **[DISABLED]** — interactive prompt is commented out; code is fully preserved (see [Disabled Features](#disabled-features))
 - **Additional standard plates**: File-based input via `additional_standard_plates.txt`
 - **Workflow manager integration**: Creates `.workflow_status/<script_name>.success` marker on completion
 
@@ -173,17 +173,9 @@ Additional columns (optional but expected):
 
 > **Note:** The `Project` column has been removed. `Proposal` now serves as the project-level identifier and is used as the prefix in plate names (e.g., `509735_WCBP1PR.1`).
 
-### 2. Custom Plate Names (`custom_plate_names.txt`) — Optional, Any Run
-One plate name per line. Each name must be **< 20 characters**.
+### 2. Custom Plate Names (`custom_plate_names.txt`) — **CURRENTLY DISABLED**
 
-**First run**: place in working directory.
-**Subsequent runs**: place in `1_make_barcode_labels/`.
-
-```
-Rex_badass_custom.1
-MA_test_44.1
-Custom_Plate_Name
-```
+> ⚠️ **This feature is disabled.** The interactive prompt that asks `Add custom plates? (y/n):` has been commented out. The script will never ask this question and will never read `custom_plate_names.txt`. All underlying code (`read_custom_plates_file()`, `get_custom_plates()`, and the processing blocks in `process_first_run()` / `process_subsequent_run()`) is preserved and can be re-enabled — see [Disabled Features](#disabled-features).
 
 ### 3. Additional Standard Plates (`additional_standard_plates.txt`) — Optional, Subsequent Runs Only
 One entry per line in `PROPOSAL_GROUP:COUNT` format.
@@ -215,7 +207,8 @@ python SPS_initiate_project_folder_and_make_sort_plate_labels.py REX12
 
 When prompted:
 1. `Enter 1, 2, or 3:` — select experiment type (required; invalid input terminates the script with no filesystem side-effects)
-2. `Add custom plates? (y/n):` — enter `y` to read `custom_plate_names.txt`, `n` to skip
+
+> **Note:** The `Add custom plates? (y/n):` prompt is **disabled**. It will not appear during a first run.
 
 ### Subsequent Run (Adding Plates)
 ```bash
@@ -226,7 +219,8 @@ python SPS_initiate_project_folder_and_make_sort_plate_labels.py
 
 The experiment type is loaded automatically from the database (no prompt). When prompted:
 - `Add additional standard plates to existing samples? (y/n):` — reads `1_make_barcode_labels/additional_standard_plates.txt`
-- `Add custom plates? (y/n):` — reads `1_make_barcode_labels/custom_plate_names.txt`
+
+> **Note:** The `Add custom plates? (y/n):` prompt is **disabled**. It will not appear during a subsequent run.
 
 ---
 
@@ -293,6 +287,32 @@ A timestamped copy is archived to `archived_files/` before each update.
 ---
 
 ## Algorithm Details
+
+---
+
+## Disabled Features
+
+### Custom Plates (`custom_plate_names.txt`)
+
+The ability to add custom (non-standard) plate names during an interactive session has been **temporarily disabled**. The interactive `y/n` prompt (`Add custom plates?`) no longer appears on first or subsequent runs.
+
+**What is disabled:**
+- The `while True:` loop inside [`get_custom_plates()`](../SPS_initiate_project_folder_and_make_sort_plate_labels.py) that prompts the user
+- The custom-plate concatenation blocks inside `process_first_run()` and `process_subsequent_run()`
+
+**What is preserved (fully intact, just unreachable):**
+- [`read_custom_plates_file()`](../SPS_initiate_project_folder_and_make_sort_plate_labels.py) — reads and validates `custom_plate_names.txt`
+- [`get_custom_plates()`](../SPS_initiate_project_folder_and_make_sort_plate_labels.py) — function exists; returns `[]` immediately
+- All custom-plate processing logic in `manage_input_files()` and `create_project_folder_structure()` (the `custom_plates/` subfolder is still created)
+
+**To re-enable:**
+1. Open `SPS_initiate_project_folder_and_make_sort_plate_labels.py`
+2. In `get_custom_plates()`: remove the `return []` early-return line and uncomment the `while True:` block
+3. In `process_first_run()`: uncomment the `if custom_plates:` block
+4. In `process_subsequent_run()`: uncomment the `if custom_plates:` block
+5. Update this README to remove the disabled notices
+
+---
 
 ### First Run Flow
 1. Parse CLI arguments; print header

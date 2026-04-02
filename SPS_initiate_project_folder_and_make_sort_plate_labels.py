@@ -17,7 +17,7 @@ CRITICAL REQUIREMENTS:
 
 Features:
 - Automatic detection of sample metadata CSV files (sample_metadata.csv)
-- File-based input for custom plates (custom_plate_names.txt)
+- File-based input for custom plates (custom_plate_names.txt) [DISABLED — code preserved, see get_custom_plates()]
 - File-based input for additional standard plates (additional_standard_plates.txt)
 - Simplified incremental barcode generation (e.g., ABC12-1, ABC12-2, ABC12-3)
 - Two-table database architecture for better data organization
@@ -1108,19 +1108,28 @@ def get_custom_plates(is_first_run=True):
     
     Returns:
         list: List of custom plate names, or empty list if user declines
+
+    NOTE: This interactive prompt is currently DISABLED. The function body is
+    preserved for future re-enablement. To re-enable, uncomment the while-loop
+    below and remove the early return.
     """
-    # Ask user interactively
-    while True:
-        response = input("Add custom plates? (y/n): ").lower().strip()
-        if response in ['y', 'yes']:
-            # User wants custom plates - look for file
-            print("Looking for 'custom_plate_names.txt' file...")
-            return read_custom_plates_file(is_first_run)
-        elif response in ['n', 'no']:
-            # User doesn't want custom plates
-            return []
-        else:
-            print("Please enter 'y' for yes or 'n' for no.")
+    # DISABLED: Custom plate upload via interactive prompt has been turned off.
+    # The underlying read_custom_plates_file() function and all processing logic
+    # remain intact. To re-enable, remove the next line and uncomment the block below.
+    return []
+
+    # # Ask user interactively
+    # while True:
+    #     response = input("Add custom plates? (y/n): ").lower().strip()
+    #     if response in ['y', 'yes']:
+    #         # User wants custom plates - look for file
+    #         print("Looking for 'custom_plate_names.txt' file...")
+    #         return read_custom_plates_file(is_first_run)
+    #     elif response in ['n', 'no']:
+    #         # User doesn't want custom plates
+    #         return []
+    #     else:
+    #         print("Please enter 'y' for yes or 'n' for no.")
 
 
 def create_project_folder_structure():
@@ -1589,17 +1598,19 @@ def process_first_run(experiment_type, pre_validated_sample_df=None, pre_validat
     custom_plates_processed = False
     additional_plates_processed = False  # Never processed on first run
 
-    # Add custom plates if requested (first run)
-    custom_plates = get_custom_plates(is_first_run=True)
-    if custom_plates:
-        custom_df = pd.DataFrame([
-            {'plate_name': name, 'project': 'CUSTOM', 'sample': 'CUSTOM',
-             'plate_number': 1, 'is_custom': True}
-            for name in custom_plates
-        ])
-        plates_df = pd.concat([plates_df, custom_df], ignore_index=True)
-        print(f"✅ Added {len(custom_plates)} custom plates")
-        custom_plates_processed = True
+    # DISABLED: Custom plate interactive prompt is turned off.
+    # get_custom_plates() now returns [] immediately without prompting the user.
+    # The code below is preserved for future re-enablement.
+    custom_plates = get_custom_plates(is_first_run=True)  # always returns [] while disabled
+    # if custom_plates:
+    #     custom_df = pd.DataFrame([
+    #         {'plate_name': name, 'project': 'CUSTOM', 'sample': 'CUSTOM',
+    #          'plate_number': 1, 'is_custom': True}
+    #         for name in custom_plates
+    #     ])
+    #     plates_df = pd.concat([plates_df, custom_df], ignore_index=True)
+    #     print(f"✅ Added {len(custom_plates)} custom plates")
+    #     custom_plates_processed = True
 
     return sample_df, plates_df, custom_plates_processed, additional_plates_processed
 
@@ -1695,8 +1706,10 @@ def process_subsequent_run(existing_sample_df, existing_plates_df, experiment_ty
     # Ask for additional standard plates (only on subsequent runs)
     additional_plates = get_additional_standard_plates(is_first_run=False)
     
-    # Ask for custom plates (available on all runs, subsequent run)
-    custom_plates = get_custom_plates(is_first_run=False)
+    # DISABLED: Custom plate interactive prompt is turned off.
+    # get_custom_plates() now returns [] immediately without prompting the user.
+    # The code below is preserved for future re-enablement.
+    custom_plates = get_custom_plates(is_first_run=False)  # always returns [] while disabled
     
     # Check if user wants to add any plates
     if not additional_plates and not custom_plates:
@@ -1711,19 +1724,19 @@ def process_subsequent_run(existing_sample_df, existing_plates_df, experiment_ty
         plates_df = additional_df
         additional_plates_processed = True
     
-    # Process custom plates
-    if custom_plates:
-        custom_df = pd.DataFrame([
-            {'plate_name': name, 'project': 'CUSTOM', 'sample': 'CUSTOM',
-             'plate_number': 1, 'is_custom': True}
-            for name in custom_plates
-        ])
-        if plates_df.empty:
-            plates_df = custom_df
-        else:
-            plates_df = pd.concat([plates_df, custom_df], ignore_index=True)
-        print(f"✅ Added {len(custom_plates)} custom plates")
-        custom_plates_processed = True
+    # DISABLED: Custom plate processing block preserved for future re-enablement.
+    # if custom_plates:
+    #     custom_df = pd.DataFrame([
+    #         {'plate_name': name, 'project': 'CUSTOM', 'sample': 'CUSTOM',
+    #          'plate_number': 1, 'is_custom': True}
+    #         for name in custom_plates
+    #     ])
+    #     if plates_df.empty:
+    #         plates_df = custom_df
+    #     else:
+    #         plates_df = pd.concat([plates_df, custom_df], ignore_index=True)
+    #     print(f"✅ Added {len(custom_plates)} custom plates")
+    #     custom_plates_processed = True
     
     # Plates prepared for processing
     
