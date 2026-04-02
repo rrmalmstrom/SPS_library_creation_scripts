@@ -13,7 +13,7 @@ The script supports both **first runs** (new projects) and **subsequent runs** (
 - **Experiment type selection**: Interactive prompt on first run selects Standard SPS-CE, Standard BONCAT, or Other — applies appropriate validation and plate-generation logic; stored in database and loaded automatically on subsequent runs
 - **Fail-fast validation**: All interactive prompts and CSV validation run *before* any folders are created on disk — a wrong experiment type or bad CSV leaves no side-effects
 - **Automatic run-type detection**: First run vs. subsequent run based on `project_summary.db`
-- **Automatic CSV detection**: Finds `sample_metadtata.csv` (or any valid CSV) in the working directory
+- **Automatic CSV detection**: Finds `sample_metadata.csv` (or any valid CSV) in the working directory
 - **Standardized folder creation**: Creates the full SPS project folder hierarchy on first run
 - **Simplified incremental barcodes**: `BASE-1`, `BASE-2`, … with optional custom base barcode via CLI
 - **BarTender file generation**: Reverse-ordered with BarTender header and footer
@@ -60,8 +60,8 @@ Enter 1, 2, or 3:
 
 | Type | Internal value | `Group_or_abrvSample` meaning | Plate generation | Extra validation |
 |------|---------------|-------------------------------|-----------------|-----------------|
-| Standard SPS-CE | `sps_ce` | Unique abbreviated sample name per row | 1 row → N plates | Each `Group_or_abrvSample` must be unique across all rows |
-| Standard BONCAT | `boncat` | Group label shared by multiple samples sorted onto the same plate | 1 unique group → N plates (rows within the group are deduplicated) | Each group must have ≥ 2 rows; `Number_of_sorted_plates` must be consistent within each group |
+| Standard SPS-CE | `std_sps` | Unique abbreviated sample name per row | 1 row → N plates | Each `Group_or_abrvSample` must be unique across all rows |
+| Standard BONCAT | `std_boncat` | Group label shared by multiple samples sorted onto the same plate | 1 unique group → N plates (rows within the group are deduplicated) | Each group must have ≥ 2 rows; `Number_of_sorted_plates` must be consistent within each group |
 | Other | `other` | Unique abbreviated sample name per row | 1 row → N plates (same as SPS-CE) | Each `Group_or_abrvSample` must be unique across all rows |
 
 ---
@@ -123,6 +123,14 @@ All 12 individual sample rows are preserved in the `sample_metadata` table of th
 
 Applies the same validation and plate-generation logic as Standard SPS-CE. Each row must have a unique `Group_or_abrvSample` value. The experiment type is stored as `other` in the database, making it available to downstream scripts that may need to branch on experiment type.
 
+When the user selects mode 3, the script prints a notice immediately after the selection:
+
+```
+ℹ️  NOTE: For 'Other' experiment type, the script will generate barcode
+   labels only. Plate layout files will NOT be created automatically.
+   You will need to create plate layout files manually.
+```
+
 ---
 
 ## Project Folder Structure Created
@@ -150,7 +158,7 @@ project_root/
 
 ## Input Files
 
-### 1. Sample Metadata CSV (`sample_metadtata.csv`) — First Run Only
+### 1. Sample Metadata CSV (`sample_metadata.csv`) — First Run Only
 Place in the working directory before running. Required columns (identical for all experiment types):
 
 | Column | Description | Validation |
@@ -240,6 +248,35 @@ Barcodes continue incrementally across subsequent runs (e.g., if run 1 ended at 
 
 Format: reverse-ordered (highest barcode number first) with BarTender header and footer.
 
+### Plate Layout CSV Files *(Standard SPS-CE and Standard BONCAT only)*
+One CSV file per plate is written to **`2_sort_plates_and_amplify_genomes/A_sort_plate_layouts/`** in the project directory.
+
+**Filename format:** `<plate_name>_plate_layout.csv`
+**Examples:** `777777_Dog.1_plate_layout.csv`, `509735_WCBP1PR.2_plate_layout.csv`
+
+Each file is a filled-in copy of the appropriate 384-well template:
+
+| Experiment type | Template used |
+|-----------------|---------------|
+| Standard SPS-CE | `standar_sort_plate_layouts/standard_384_SPS_plate_layout.csv` |
+| Standard BONCAT | `standar_sort_plate_layouts/standard_BONCAT_384_plate_layout.csv` |
+
+The templates are resolved relative to the **script's own directory** (not the project working directory), so the script can be called from any project folder.
+
+**Fields populated per plate:**
+
+| Column | Value written |
+|--------|---------------|
+| `Plate_ID` | Plate name (e.g., `777777_Dog.1`) — filled on **every** row |
+| `Sample` | `Group_or_abrvSample` abbreviation (e.g., `Dog`) — filled on all rows where `Type != unused` (i.e., `sample`, `neg_cntrl`, `pos_cntrl`, and any other active well types) |
+| All other columns | Copied unchanged from the template (controls, unused wells, `Group_1`, etc.) |
+
+**Notes:**
+- Layout files are **not** generated for custom plates (added via `custom_plate_names.txt`).
+- Layout files are **not** generated when experiment type is **Other** (mode 3).
+- On subsequent runs, layout files are generated for newly added plates only.
+- If a layout file already exists for a plate being generated, the script terminates with a **FATAL ERROR** rather than overwriting it.
+
 ### Database
 **`project_summary.db`** — SQLite database with two tables:
 - `sample_metadata` — one row per sample from the input CSV, including `experiment_type` column
@@ -261,7 +298,7 @@ A timestamped copy is archived to `archived_files/` before each update.
 1. Parse CLI arguments; print header
 2. Read database → not found → `is_first_run = True`
 3. Prompt user to select experiment type (1 = SPS-CE, 2 = BONCAT, 3 = Other); invalid input → FATAL ERROR, no folders created
-4. Detect and read `sample_metadtata.csv`; apply shared validation (required columns, character limits, integer check)
+4. Detect and read `sample_metadata.csv`; apply shared validation (required columns, character limits, integer check)
 5. Apply experiment-type-specific validation:
    - **SPS-CE / Other**: `Group_or_abrvSample` must be unique across all rows
    - **BONCAT**: each group must have ≥ 2 rows; `Number_of_sorted_plates` must be consistent within each group
@@ -310,6 +347,8 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 | Invalid `additional_standard_plates.txt` format | FATAL ERROR with format example |
 | Database read/write failure | FATAL ERROR |
 | Folder creation failure | FATAL ERROR |
+| Plate layout template CSV not found in script directory | FATAL ERROR |
+| Plate layout output file already exists for a plate being generated | FATAL ERROR — script terminates; remove or rename the conflicting file |
 
 ---
 
@@ -320,7 +359,7 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 - Re-run the script and enter the correct number.
 
 ### "FATAL ERROR: No sample metadata CSV file found"
-- Ensure `sample_metadtata.csv` (note the typo — two `t`s in `metadtata`) is in the working directory on first run.
+- Ensure `sample_metadata.csv` is in the working directory on first run.
 - On subsequent runs the CSV is not needed; the database is used instead.
 
 ### "FATAL ERROR: Multiple valid sample metadata CSV files found"
@@ -353,6 +392,7 @@ All errors follow the `FATAL ERROR:` prefix convention and call `sys.exit()` (no
 ## Version History
 
 ### Current Version (SPS — April 2026)
+- **Plate layout CSV generation**: For Standard SPS-CE and Standard BONCAT runs, one `<plate_name>_plate_layout.csv` is written to `2_sort_plates_and_amplify_genomes/A_sort_plate_layouts/` for every standard plate generated (custom plates and Other mode are excluded). Templates are read from `standar_sort_plate_layouts/` relative to the script file; output is written to the project working directory. A FATAL ERROR is raised if an output file already exists.
 - **Experiment type selection**: Interactive prompt at start of first run selects Standard SPS-CE, Standard BONCAT, or Other; stored in database and loaded automatically on subsequent runs (no re-prompting)
 - **Fail-fast ordering**: Experiment type prompt and CSV validation now run *before* folder creation — invalid input leaves no filesystem side-effects
 - **BONCAT plate generation**: Group-based deduplication — plate labels generated once per unique `(Proposal, Group_or_abrvSample)` pair rather than once per row

@@ -16,7 +16,7 @@ CRITICAL REQUIREMENTS:
 - Creates success markers for workflow manager integration
 
 Features:
-- Automatic detection of sample metadata CSV files (sample_metadtata.csv)
+- Automatic detection of sample metadata CSV files (sample_metadata.csv)
 - File-based input for custom plates (custom_plate_names.txt)
 - File-based input for additional standard plates (additional_standard_plates.txt)
 - Simplified incremental barcode generation (e.g., ABC12-1, ABC12-2, ABC12-3)
@@ -72,6 +72,11 @@ BARTENDER_HEADER = '%BTW% /AF="\\\\BARTENDER\\shared\\templates\\ECHO_BCode8.btw
 DATABASE_NAME = "project_summary.db"
 BARTENDER_FILE = "BARTENDER_sort_plate_labels.txt"
 
+# Template layout CSVs — resolved relative to this script file, not the CWD
+_SCRIPT_DIR = Path(__file__).parent
+SPS_LAYOUT_TEMPLATE   = _SCRIPT_DIR / "standar_sort_plate_layouts" / "standard_384_SPS_plate_layout.csv"
+BONCAT_LAYOUT_TEMPLATE = _SCRIPT_DIR / "standar_sort_plate_layouts" / "standard_BONCAT_384_plate_layout.csv"
+
 
 def validate_custom_base_barcode(base_barcode):
     """
@@ -117,8 +122,8 @@ def validate_custom_base_barcode(base_barcode):
 # ---------------------------------------------------------------------------
 
 # Valid experiment type constants
-EXPERIMENT_TYPE_SPS_CE = "sps_ce"
-EXPERIMENT_TYPE_BONCAT = "boncat"
+EXPERIMENT_TYPE_SPS_CE = "std_sps"
+EXPERIMENT_TYPE_BONCAT = "std_boncat"
 EXPERIMENT_TYPE_OTHER  = "other"
 
 
@@ -153,6 +158,10 @@ def get_experiment_type():
         return EXPERIMENT_TYPE_BONCAT
     elif response == '3':
         print("✅ Experiment type set to: Other")
+        print("")
+        print("ℹ️  NOTE: For 'Other' experiment type, the script will generate barcode")
+        print("   labels only. Plate layout files will NOT be created automatically.")
+        print("   You will need to create plate layout files manually.")
         return EXPERIMENT_TYPE_OTHER
     else:
         print(f"FATAL ERROR: Invalid selection '{response}'. Please enter 1, 2, or 3.")
@@ -761,7 +770,7 @@ def detect_sample_metadata_csv():
     Raises:
         SystemExit: If no valid sample metadata CSV found
     """
-    # Complete list of expected headers from sample_metadtata.csv format
+    # Complete list of expected headers from sample_metadata.csv format
     expected_headers = [
         'Proposal', 'Group_or_abrvSample', 'Sample_full', 'Collection Year',
         'Collection Month', 'Collection Day', 'Sample Isolated From', 'Latitude', 'Longitude',
@@ -771,8 +780,8 @@ def detect_sample_metadata_csv():
     # Required subset for processing
     required_headers = ['Proposal', 'Group_or_abrvSample', 'Sample_full', 'Number_of_sorted_plates']
     
-    # Look for sample_metadtata.csv specifically first
-    sample_metadata_file = Path('sample_metadtata.csv')
+    # Look for sample_metadata.csv specifically first
+    sample_metadata_file = Path('sample_metadata.csv')
     if sample_metadata_file.exists():
         try:
             df = pd.read_csv(sample_metadata_file, encoding='utf-8-sig')
@@ -798,12 +807,12 @@ def detect_sample_metadata_csv():
             print("Laboratory automation requires valid CSV format for safety.")
             sys.exit()
     
-    # If sample_metadtata.csv doesn't exist, search for other CSV files
-    csv_files = [f for f in Path('.').glob('*.csv') if f.name != 'sample_metadtata.csv']
-    
+    # If sample_metadata.csv doesn't exist, search for other CSV files
+    csv_files = [f for f in Path('.').glob('*.csv') if f.name != 'sample_metadata.csv']
+
     if not csv_files:
         print("FATAL ERROR: No sample metadata CSV file found in working directory")
-        print("Expected: 'sample_metadtata.csv' or other CSV with required headers")
+        print("Expected: 'sample_metadata.csv' or other CSV with required headers")
         print(f"Required columns: {required_headers}")
         print("Laboratory automation requires valid input files for safety.")
         sys.exit()
@@ -1246,9 +1255,9 @@ def archive_database_file(db_path, folders):
     archive_dir = folders['archived_files']
     
     # Create archive name with timestamp as suffix
-    # sample_metadtata.db → sample_metadtata_2026_02_24-Time14-30-25.db
+    # project_summary.db → project_summary_2026_02_24-Time14-30-25.db
     db_path = Path(db_path)
-    stem = db_path.stem  # "sample_metadtata"
+    stem = db_path.stem  # "project_summary"
     suffix = db_path.suffix  # ".db"
     archive_name = f"{stem}_{timestamp}{suffix}"
     archive_path = archive_dir / archive_name
@@ -1352,8 +1361,8 @@ def archive_csv_file(csv_file_path, folders):
     archive_dir = folders['archived_files']
     
     # Create archive name with timestamp as suffix
-    # sample_metadtata.csv → sample_metadtata_2026_02_24-Time14-30-25.csv
-    stem = csv_file_path.stem  # "sample_metadtata"
+    # sample_metadata.csv → sample_metadata_2026_02_24-Time14-30-25.csv
+    stem = csv_file_path.stem  # "sample_metadata"
     suffix = csv_file_path.suffix  # ".csv"
     archive_name = f"{stem}_{timestamp}{suffix}"
     archive_path = archive_dir / archive_name
@@ -1396,6 +1405,112 @@ def manage_csv_files(sample_metadata_df, individual_plates_df, folders):
     
     # Create new updated CSV files
     create_updated_csv_files(sample_metadata_df, individual_plates_df)
+
+
+def generate_plate_layout_files(new_plates_df, experiment_type, folders):
+    """
+    Generate a plate layout CSV for each standard (non-custom) plate produced
+    during this run.  Only called when experiment_type is sps_ce or boncat.
+
+    For each plate the function:
+      1. Reads the appropriate template CSV from the script's own directory
+         (``standar_sort_plate_layouts/``).
+      2. Fills ``Plate_ID`` with the plate name on every row.
+      3. Fills ``Sample`` with the plate's ``sample`` value (Group_or_abrvSample)
+         for every row whose ``Type`` is ``sample``; all other rows are left as-is.
+      4. Writes the result to
+         ``2_sort_plates_and_amplify_genomes/A_sort_plate_layouts/<plate_name>_plate_layout.csv``
+         in the current working directory (the user's project folder).
+
+    A FATAL ERROR is raised if the output file already exists — this prevents
+    accidental overwrites and catches logic errors where the same plate name
+    would be generated twice.
+
+    Args:
+        new_plates_df (pd.DataFrame): DataFrame of plates added during this run.
+            Must contain ``plate_name``, ``sample``, and ``is_custom`` columns.
+        experiment_type (str): One of EXPERIMENT_TYPE_SPS_CE or
+            EXPERIMENT_TYPE_BONCAT.  If EXPERIMENT_TYPE_OTHER or any other
+            value, the function returns immediately without writing any files.
+        folders (dict): Folder paths returned by create_project_folder_structure().
+            Must contain the ``sort_plate_layouts`` key.
+
+    Raises:
+        SystemExit: If the template CSV cannot be read, or if an output file
+            already exists for any plate being generated.
+    """
+    # Only generate layouts for SPS-CE and BONCAT
+    if experiment_type not in (EXPERIMENT_TYPE_SPS_CE, EXPERIMENT_TYPE_BONCAT):
+        return
+
+    # Select the correct template path (resolved relative to the script file)
+    if experiment_type == EXPERIMENT_TYPE_SPS_CE:
+        template_path = SPS_LAYOUT_TEMPLATE
+    else:
+        template_path = BONCAT_LAYOUT_TEMPLATE
+
+    # Load the template once — it is the same for every plate of this type
+    if not template_path.exists():
+        print(f"FATAL ERROR: Plate layout template not found: {template_path}")
+        print("The template CSV must be present in the 'standar_sort_plate_layouts'")
+        print("sub-folder of the directory that contains the Python script.")
+        print("Laboratory automation requires valid template files for safety.")
+        sys.exit()
+
+    try:
+        template_df = pd.read_csv(template_path, encoding='utf-8-sig')
+    except Exception as e:
+        print(f"FATAL ERROR: Could not read plate layout template {template_path}: {e}")
+        print("Laboratory automation requires valid template files for safety.")
+        sys.exit()
+
+    output_dir = folders['sort_plate_layouts']
+    layout_files_written = 0
+
+    for _, row in new_plates_df.iterrows():
+        # Skip custom plates — no standard layout applies
+        if row.get('is_custom', False):
+            continue
+
+        plate_name = row['plate_name']
+        sample_abbrev = row['sample']
+
+        output_path = output_dir / f"{plate_name}_plate_layout.csv"
+
+        # Safety check: refuse to overwrite an existing layout file
+        if output_path.exists():
+            print(f"FATAL ERROR: Plate layout file already exists: {output_path}")
+            print(f"A layout file for plate '{plate_name}' was found in:")
+            print(f"  {output_dir}")
+            print("This indicates a duplicate plate name was generated, or a previous")
+            print("run already created this layout.  Remove or rename the existing file")
+            print("before re-running the script.")
+            print("Laboratory automation requires unique plate identifiers for safety.")
+            sys.exit()
+
+        # Build the per-plate layout by copying the template and filling fields
+        plate_df = template_df.copy()
+
+        # Fill Plate_ID on every row
+        plate_df['Plate_ID'] = plate_name
+
+        # Ensure Sample column is object dtype before assigning strings
+        # (template CSV reads it as float64 when all values are blank)
+        plate_df['Sample'] = plate_df['Sample'].astype(object)
+
+        # Fill Sample for all non-unused rows (sample, neg_cntrl, pos_cntrl, etc.)
+        plate_df.loc[plate_df['Type'] != 'unused', 'Sample'] = sample_abbrev
+
+        try:
+            plate_df.to_csv(output_path, index=False)
+            layout_files_written += 1
+        except Exception as e:
+            print(f"FATAL ERROR: Could not write plate layout file {output_path}: {e}")
+            print("Laboratory automation requires reliable file output for safety.")
+            sys.exit()
+
+    if layout_files_written > 0:
+        print(f"✅ Generated {layout_files_written} plate layout file(s) → {output_dir}")
 
 
 def archive_existing_files(file_list, folders):
@@ -1653,7 +1768,7 @@ def process_barcodes(plates_df, existing_plates_df, custom_base_barcode=None):
     return plates_df, final_plates_df
 
 
-def finalize_files_and_database(sample_df, final_plates_df, new_plates_df, folders, is_first_run=True, custom_plates_processed=False, additional_plates_processed=False, existing_sample_df=None):
+def finalize_files_and_database(sample_df, final_plates_df, new_plates_df, folders, is_first_run=True, custom_plates_processed=False, additional_plates_processed=False, existing_sample_df=None, experiment_type=EXPERIMENT_TYPE_OTHER):
     """
     Handle all file operations: archiving, saving, organizing.
     
@@ -1666,6 +1781,8 @@ def finalize_files_and_database(sample_df, final_plates_df, new_plates_df, folde
         custom_plates_processed (bool): True if custom plates were processed this run
         additional_plates_processed (bool): True if additional standard plates were processed this run
         existing_sample_df (pd.DataFrame, optional): Existing sample metadata for comparison
+        experiment_type (str): One of the EXPERIMENT_TYPE_* constants; controls
+            whether plate layout CSVs are generated (sps_ce and boncat only).
     """
     # Archive existing database file (copy, not move)
     archive_database_file(DATABASE_NAME, folders)
@@ -1684,6 +1801,10 @@ def finalize_files_and_database(sample_df, final_plates_df, new_plates_df, folde
         plates_for_bartender = final_plates_df
     
     make_bartender_file(plates_for_bartender, bartender_filename)
+
+    # Generate plate layout CSVs for standard SPS-CE and BONCAT plates
+    if not new_plates_df.empty:
+        generate_plate_layout_files(new_plates_df, experiment_type, folders)
     
     # File Management - Organize output and input files
     manage_bartender_file(bartender_filename, folders)
@@ -1811,7 +1932,7 @@ def main():
     plates_df, final_plates_df = process_barcodes(plates_df, existing_plates_df, custom_base_barcode)
 
     # Handle all file operations
-    finalize_files_and_database(sample_df, final_plates_df, plates_df, folders, is_first_run, custom_plates_processed, additional_plates_processed, existing_sample_df)
+    finalize_files_and_database(sample_df, final_plates_df, plates_df, folders, is_first_run, custom_plates_processed, additional_plates_processed, existing_sample_df, experiment_type)
 
     # Print completion summary
     print_completion_summary(sample_df, final_plates_df, plates_df)
