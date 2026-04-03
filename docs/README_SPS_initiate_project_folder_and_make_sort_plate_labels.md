@@ -2,9 +2,19 @@
 
 ## Overview
 
-`SPS_initiate_project_folder_and_make_sort_plate_labels.py` is the **first script run** in the SPS library creation workflow. It creates the standardized project folder structure, reads sample metadata, generates sort plate names, assigns incremental barcodes, and produces a BarTender-compatible label file for printing sort plate labels.
+`SPS_initiate_project_folder_and_make_sort_plate_labels.py` is the **first script run** in the SPS library creation workflow. It creates the standardized project folder structure, reads sample metadata, generates sort plate names, assigns incremental barcodes, produces a BarTender-compatible label file for printing sort plate labels, and — for Standard SPS-CE and Standard BONCAT experiment types — automatically generates a **sort plate layout CSV file** for every plate created.
 
 The script supports both **first runs** (new projects) and **subsequent runs** (adding plates to an existing project), automatically detecting which mode to use based on the presence of the project database.
+
+### Key outputs at a glance
+
+| Output | Location | When produced |
+|--------|----------|---------------|
+| BarTender label file (`BARTENDER_sort_plate_labels_<timestamp>.txt`) | `1_make_barcode_labels/bartender_barcode_labels/` | Every run |
+| Sort plate layout CSVs (`<plate_name>_plate_layout.csv`) | `2_sort_plates_and_amplify_genomes/A_sort_plate_layouts/` | Standard SPS-CE and Standard BONCAT only (not Other, not custom plates) |
+| SQLite database (`project_summary.db`) | Project root | Every run |
+| CSV exports (`sample_metadata.csv`, `individual_plates.csv`) | Project root | Every run |
+| Workflow status marker | `.workflow_status/` | Every successful run |
 
 ---
 
