@@ -5,7 +5,7 @@
 `SPS_process_WGA_results.py` is **Script 2** in the SPS library creation workflow. It sits between:
 
 - **Script 1** (`SPS_initiate_project_folder_and_make_sort_plate_labels.py`) — which creates the project folder structure, generates plate layout CSVs, and populates `project_summary.db`
-- **Script 3** (`enhanced_generate_SPITS_input.py`) — which takes a processed MDA results CSV and generates SPITS sequencing submission input
+- **Script 3** (`SPS_process_WGA_results_and_make_SPITS.py`) — which takes a processed MDA results CSV and generates SPITS sequencing submission input
 
 Script 2 reads all amplification kinetics files produced after WGA (Whole Genome Amplification / MDA), filters to passing wells, assigns destination library plate numbers, and writes a consolidated summary CSV that Script 3 uses as its primary input.
 
@@ -13,7 +13,7 @@ Script 2 reads all amplification kinetics files produced after WGA (Whole Genome
 
 ## Coding Style
 
-This script follows the **functional programming style** used throughout this codebase — not object-oriented. All logic is implemented as standalone functions (not classes or methods). This is consistent with all other Python scripts in this workspace (e.g., `SPS_initiate_project_folder_and_make_sort_plate_labels.py`, `enhanced_generate_SPITS_input.py`, `SPS_rework_first_attempt_NEW.py`).
+This script follows the **functional programming style** used throughout this codebase — not object-oriented. All logic is implemented as standalone functions (not classes or methods). This is consistent with all other Python scripts in this workspace (e.g., `SPS_initiate_project_folder_and_make_sort_plate_labels.py`, `SPS_process_WGA_results_and_make_SPITS.py`, `SPS_rework_first_attempt_NEW.py`).
 
 ---
 
@@ -50,7 +50,7 @@ Script 2: SPS_process_WGA_results.py  ← THIS SCRIPT
   └─► Validates: corresponding plate layout CSVs exist in A_sort_plate_layouts/
   └─► Writes: 2_sort_plates_and_amplify_genomes/C_WGA_summary_and_SPITS/summary_MDA_results.csv
 
-Script 3: enhanced_generate_SPITS_input.py
+Script 3: SPS_process_WGA_results_and_make_SPITS.py
   └─► Reads: summary_MDA_results.csv (produced by Script 2)
   └─► Reads: project_summary.db (individual_plates table — for echo_id lookup)
   └─► Writes: output.csv (SPITS format), project_summary.csv, project_summary.db (updated)
@@ -243,7 +243,7 @@ All errors use `FATAL ERROR:` prefix and call `sys.exit()` with no exit code, co
 
 ---
 
-## Required Modifications to Script 3 (`enhanced_generate_SPITS_input.py`)
+## Required Modifications to Script 3 (`SPS_process_WGA_results_and_make_SPITS.py`)
 
 The following changes to Script 3 are required to work with Script 2's output and the new workflow:
 

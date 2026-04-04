@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-## USAGE:  python enhanced_generate_SPITS_input.py <manually modified summary_MDA_results.csv> <SingleCell Query - Echo Barcodes.csv>
+## USAGE:  python SPS_process_WGA_results_and_make_SPITS.py <summary_MDA_results.csv>
 
 import pandas as pd
 import numpy as np
@@ -56,25 +56,6 @@ def countLibsPerPlate(df):
         print('Please check the input file and reassign samples.')
         print('Aborting script.\n')
                
-        sys.exit()
-
-##########################
-##########################
-
-
-##########################
-##########################
-def checkSourcePlateDistribution(df):
-    # count the number of dest plates with DNA from the same source plate
-    source_count = df.groupby('Plate_id')['Dest_plate'].nunique()
-    
-    # abort script immediately if multiple library plates have wells from the same source plate
-    # this is no longer acceptable and requires reassignment of groupings
-    if (source_count>1).any():
-        print('\n\nERROR: At least one source plate has samples in multiple library plates.')
-        print('This is no longer acceptable. Please reassign the groupings to avoid')
-        print('splitting samples across multiple destination plates.')
-        print('Aborting script.\n')
         sys.exit()
 
 ##########################
@@ -258,33 +239,48 @@ def assignIlluminaIndex(df,ill_set_list ,illum_dict, convert_96w_to_384w):
 
 ##########################
 ##########################
-def addEchoId(df, echo_file):
-
-    echo_df = pd.read_csv(echo_file, header=1, usecols= ['Project Name','Echo Barcode','Sample Name','Window Name','Plate Index'])
+def lookupEchoIdFromDatabase(df, db_path):
+    """
+    Look up Echo liquid handler plate barcodes from project_summary.db.
     
-    echo_cols = ['Project Name','Sample Name','Window Name','Plate Index']
+    Replaces the previous addEchoId() function which required a separate
+    Echo Barcodes CSV file. The barcode value from the individual_plates
+    table is used as the echo_id for each plate.
     
-    echo_df['combined'] = echo_df[echo_cols].apply(lambda row: '.'.join(row.values.astype(str)), axis=1)
-    
-    # make dict where destination plate is the key and lowest index number is the value
-    echo_dict = dict(zip(echo_df['combined'], echo_df['Echo Barcode']))
-    
-    # add column with the lowest index value for the dest plate indicated in each row
-    df['echo_id'] = df['Plate_id'].replace(echo_dict)
-    
-    # confirm that echo_id were assigned and that they
-    # do not match Plate_id.  The latter will happen if
-    # the plate id is not in the query file downloaded from
-    # the single cell analysis tool website
-    s = df['echo_id'].isin(df['Plate_id'])
-    
-    if s.any() | df['echo_id'].isnull().any():
-        print('\n\nERROR: Problem finding echo plate ID.')
-        print('Check for source plate ID in query file downloaded from single cell analysis website.')
-        print('Aborting script.\n')
-    
-        sys.exit()
+    Args:
+        df (pd.DataFrame): DataFrame with Plate_id column
+        db_path (Path): Path to project_summary.db
         
+    Returns:
+        pd.DataFrame: DataFrame with echo_id column added
+    """
+    # Read individual_plates table from database
+    try:
+        engine = create_engine(f'sqlite:///{db_path}')
+        with engine.connect() as conn:
+            plates_df = pd.read_sql('SELECT plate_name, barcode FROM individual_plates', conn)
+        engine.dispose()
+    except Exception as e:
+        print(f'\n\nERROR: Could not read database {db_path}: {e}')
+        print('Aborting script.\n')
+        sys.exit()
+    
+    # Build lookup dict: plate_name -> barcode
+    echo_dict = dict(zip(plates_df['plate_name'], plates_df['barcode']))
+    
+    # Map Plate_id to echo_id using the lookup dict
+    df['echo_id'] = df['Plate_id'].map(echo_dict)
+    
+    # Validate: all Plate_id values must have a matching barcode
+    missing = df[df['echo_id'].isnull()]['Plate_id'].unique().tolist()
+    if missing:
+        print(f'\n\nERROR: The following plate IDs were not found in the database:')
+        for plate in missing:
+            print(f'  {plate}')
+        print('Check that project_summary.db contains all plates from the input CSV.')
+        print('Aborting script.\n')
+        sys.exit()
+    
     return df
 
 ##########################
@@ -518,24 +514,25 @@ def main():
     Main function to process single cell data and generate SPITS output with database functionality
     """
     # Check for correct number of command line arguments
-    if len(sys.argv) != 3:
-        print(f"\nUsage: {sys.argv[0]} <input_csv_file> <echo_barcodes_csv_file>")
-        print("Example: python enhanced_generate_SPITS_input.py input.csv 'SingleCell Query - Echo Barcodes.csv'")
+    if len(sys.argv) != 2:
+        print(f"\nUsage: {sys.argv[0]} <summary_MDA_results_csv>")
+        print("Example: python SPS_process_WGA_results_and_make_SPITS.py summary_MDA_results.csv")
+        print("Note: Echo barcodes are now looked up from project_summary.db automatically.")
         sys.exit(1)
     
-    # get input files from command line
+    # get input file from command line
     input_file = sys.argv[1]
-    echo_file = sys.argv[2]
+    db_path = Path('project_summary.db')
 
     # import file with list of single cell selected for sequencing
     df = importSCdata(input_file)
 
     # abort script if  >83 libs were assign to any library plate
     countLibsPerPlate(df)
-        
-    # check if a wells from a source plates are  distriubtion in >1 library plate
-    # this isn't necessarily a fatal flaw, but generally should be avoided
-    checkSourcePlateDistribution(df)
+
+    # checkSourcePlateDistribution() removed — Script 2 (SPS_process_WGA_results.py)
+    # now controls Dest_plate assignment and intentionally allows source plates to
+    # span multiple destination plates.
 
     # generate random ID for dest/lib plates
     df = assignLibPlateID(df)
@@ -555,8 +552,8 @@ def main():
     # assign Illumina indexes to be used with each samples
     df = assignIlluminaIndex(df,ill_set_list,illum_dict, convert_96w_to_384w)
 
-    # add echo id's from file downloaded from single cell analysis website
-    df = addEchoId(df, echo_file)
+    # look up echo IDs from project_summary.db
+    df = lookupEchoIdFromDatabase(df, db_path)
 
     # add columns expected by SPITS
     df = addSPITScolumns(df)
